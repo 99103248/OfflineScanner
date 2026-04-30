@@ -19,7 +19,7 @@ room = "2.8.4"
 coil = "2.7.0"
 accompanist = "0.37.3"
 
-opencv = "4.10.0"
+opencv = "4.13.0"
 rapidocr = "1.0.0"
 documentfile = "1.1.0"
 
