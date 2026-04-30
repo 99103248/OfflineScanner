@@ -22,7 +22,9 @@ object DatabaseModule {
     @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
         Room.databaseBuilder(ctx, AppDatabase::class.java, "scanner.db")
-            .fallbackToDestructiveMigration()
+            // Room 2.9 弃用了无参版本：必须显式说明无 schema 时是否清空所有表。
+            // 我们 schema 还在迭代期，还没生产用户数据需要保留 → true（drop all）
+            .fallbackToDestructiveMigration(dropAllTables = true)
             .build()
 
     @Provides

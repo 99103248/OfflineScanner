@@ -11,7 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.AssistChip
@@ -32,7 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.scanner.offline.R
@@ -57,7 +57,7 @@ fun DocumentDetailScreen(
             TopAppBar(
                 title = { Text(doc?.name ?: "文档") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, null) }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
                 },
                 actions = {
                     IconButton(onClick = onExportClick) {

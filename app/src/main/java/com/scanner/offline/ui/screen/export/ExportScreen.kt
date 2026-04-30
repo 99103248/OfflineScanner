@@ -14,12 +14,12 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.TextSnippet
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PictureAsPdf
-import androidx.compose.material.icons.outlined.TextSnippet
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -44,7 +44,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.scanner.offline.domain.model.ExportFormat
 import com.scanner.offline.util.ShareUtils
@@ -75,7 +75,7 @@ fun ExportScreen(
         ExportTile(Icons.Outlined.PictureAsPdf, ExportFormat.PDF),
         ExportTile(Icons.Outlined.Description, ExportFormat.WORD),
         ExportTile(Icons.Outlined.GridOn, ExportFormat.EXCEL),
-        ExportTile(Icons.Outlined.TextSnippet, ExportFormat.TXT),
+        ExportTile(Icons.AutoMirrored.Outlined.TextSnippet, ExportFormat.TXT),
         ExportTile(Icons.Outlined.Image, ExportFormat.JPG),
         ExportTile(Icons.Outlined.Image, ExportFormat.PNG),
         ExportTile(Icons.Outlined.Image, ExportFormat.WEBP)
@@ -86,7 +86,7 @@ fun ExportScreen(
             TopAppBar(
                 title = { Text("导出") },
                 navigationIcon = {
-                    IconButton(onClick = onBack) { Icon(Icons.Outlined.ArrowBack, null) }
+                    IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
                 }
             )
         },
