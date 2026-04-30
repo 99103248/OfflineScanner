@@ -2,6 +2,7 @@
 
 > 一款 100% 离线运行的 Android 文档扫描应用，所有图像处理、文字识别和文档导出全部在手机本地完成，**不向任何服务器上传任何数据**。
 
+[![CI](https://github.com/99103248/OfflineScanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/99103248/OfflineScanner/actions/workflows/ci.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-10%2B-green.svg)](#)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg)](https://kotlinlang.org/)
