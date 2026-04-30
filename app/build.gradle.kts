@@ -8,6 +8,26 @@ plugins {
     alias(libs.plugins.hilt)
 }
 
+// ─── 发布签名 env 读取 ─────────────────────────────────────────
+// 必须在 android { ... } 块之外读 env，否则在某些情况下（CI Gradle 8.10
+// 配合 setup-gradle action）env var 不会被正确传给 Android plugin 的
+// signing extension。
+val offscanKeystoreB64: String = System.getenv("OFFSCAN_KEYSTORE_BASE64").orEmpty()
+val offscanKeystorePwd: String = System.getenv("OFFSCAN_KEYSTORE_PASSWORD").orEmpty()
+val offscanKeyAlias: String = System.getenv("OFFSCAN_KEY_ALIAS").orEmpty()
+val offscanKeyPwd: String = System.getenv("OFFSCAN_KEY_PASSWORD").orEmpty()
+val canSignRelease: Boolean = offscanKeystoreB64.isNotBlank() &&
+    offscanKeystorePwd.isNotBlank() &&
+    offscanKeyAlias.isNotBlank() &&
+    offscanKeyPwd.isNotBlank()
+
+// 在 android 块之外的诊断输出（top-level 一定会被求值，不会被 DSL 延迟）
+println("[OffScan signing] OFFSCAN_KEYSTORE_BASE64 length=${offscanKeystoreB64.length}")
+println("[OffScan signing] OFFSCAN_KEYSTORE_PASSWORD length=${offscanKeystorePwd.length}")
+println("[OffScan signing] OFFSCAN_KEY_ALIAS length=${offscanKeyAlias.length}")
+println("[OffScan signing] OFFSCAN_KEY_PASSWORD length=${offscanKeyPwd.length}")
+println("[OffScan signing] canSignRelease=$canSignRelease")
+
 android {
     namespace = "com.scanner.offline"
     compileSdk = 34
@@ -35,49 +55,24 @@ android {
     }
 
     // ─── 发布签名配置 ─────────────────────────────────────
-    // 本地与 CI 都从环境变量读取签名信息，不在仓库里硬编码任何路径或密码。
-    //
-    // 必须的 4 个变量：
-    //   OFFSCAN_KEYSTORE_BASE64   keystore 文件的 base64 编码（CI 友好）
+    // 必须的 4 个 env var:
+    //   OFFSCAN_KEYSTORE_BASE64   keystore 文件的 base64 编码
     //   OFFSCAN_KEYSTORE_PASSWORD keystore 密码
     //   OFFSCAN_KEY_ALIAS         证书 alias
     //   OFFSCAN_KEY_PASSWORD      证书 password
-    //
-    // 任意一个缺失就跳过签名（release APK 仍能编译，但产物 unsigned）。
-    val keystoreBase64 = System.getenv("OFFSCAN_KEYSTORE_BASE64").orEmpty()
-    val keystorePassword = System.getenv("OFFSCAN_KEYSTORE_PASSWORD").orEmpty()
-    val keyAlias = System.getenv("OFFSCAN_KEY_ALIAS").orEmpty()
-    val keyPassword = System.getenv("OFFSCAN_KEY_PASSWORD").orEmpty()
-    val canSignRelease = keystoreBase64.isNotBlank() &&
-        keystorePassword.isNotBlank() &&
-        keyAlias.isNotBlank() &&
-        keyPassword.isNotBlank()
-
-    // 调试日志：打印 env var 是否存在（不泄漏值），帮助排查 CI 签名问题。
-    // 用 logger.lifecycle 而非 println —— println 在 configuration cache 启用时会被
-    // Gradle 重定向到 INFO 级别，CI 默认 LIFECYCLE 级别看不到。
-    logger.lifecycle("[OffScan signing] OFFSCAN_KEYSTORE_BASE64 length=${keystoreBase64.length}")
-    logger.lifecycle("[OffScan signing] OFFSCAN_KEYSTORE_PASSWORD blank=${keystorePassword.isBlank()}")
-    logger.lifecycle("[OffScan signing] OFFSCAN_KEY_ALIAS blank=${keyAlias.isBlank()}")
-    logger.lifecycle("[OffScan signing] OFFSCAN_KEY_PASSWORD blank=${keyPassword.isBlank()}")
-    logger.lifecycle("[OffScan signing] canSignRelease=$canSignRelease")
-
-    // signingConfigs 始终声明 release block（哪怕 secret 缺失），
-    // 这样 buildTypes.release.signingConfig 引用时不会崩；
-    // storeFile 如果没有 secret 就指向一个不存在的占位路径，AGP 会因此自动
-    // 输出 unsigned APK 而非 signed APK。
-    signingConfigs {
-        create("release") {
-            if (canSignRelease) {
+    // 它们在文件顶部被读取（top-level，配置阶段必然求值）。
+    if (canSignRelease) {
+        signingConfigs {
+            create("release") {
                 val keystoreFile = layout.buildDirectory.file("ci-keystore.jks").get().asFile.apply {
                     parentFile.mkdirs()
-                    writeBytes(Base64.getDecoder().decode(keystoreBase64))
+                    writeBytes(Base64.getDecoder().decode(offscanKeystoreB64))
                 }
-                logger.lifecycle("[OffScan signing] Wrote keystore to: ${keystoreFile.absolutePath} (${keystoreFile.length()} bytes)")
+                println("[OffScan signing] Wrote keystore to: ${keystoreFile.absolutePath} (${keystoreFile.length()} bytes)")
                 storeFile = keystoreFile
-                storePassword = keystorePassword
-                this.keyAlias = keyAlias
-                this.keyPassword = keyPassword
+                storePassword = offscanKeystorePwd
+                this.keyAlias = offscanKeyAlias
+                this.keyPassword = offscanKeyPwd
                 enableV1Signing = true
                 enableV2Signing = true
             }
