@@ -114,8 +114,14 @@ jobs:
             grep -i "OffScan signing" assemble-release.log || echo "(no [OffScan signing] lines found in build log)"
             exit 1
           fi
-          # apksigner 验签（jarsigner 也行，但 apksigner 是 Android 官方推荐）
-          "$ANDROID_HOME/build-tools"/*/apksigner verify --verbose "$apk" || {
+          # apksigner 验签 —— 用最新的 build-tools 版本里的 apksigner
+          apksigner_bin=$(ls -d "$ANDROID_HOME/build-tools"/*/apksigner 2>/dev/null | sort -V | tail -n 1)
+          if [[ -z "$apksigner_bin" ]]; then
+            echo "::error::apksigner not found under \$ANDROID_HOME/build-tools/*/"
+            exit 1
+          fi
+          echo "Using apksigner at: $apksigner_bin"
+          "$apksigner_bin" verify --verbose "$apk" || {
             echo "::error::apksigner refused this APK"
             exit 1
           }
