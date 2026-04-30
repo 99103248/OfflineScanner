@@ -26,7 +26,7 @@ jobs:
   release-please:
     runs-on: ubuntu-latest
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           # release-type: simple 适合"非语言生态"的项目（不是 npm/pypi 等）
           # 它会根据 conventional commits 维护一个 version.txt 与 CHANGELOG.md
