@@ -23,7 +23,7 @@ opencv = "4.10.0"
 rapidocr = "1.0.0"
 documentfile = "1.0.1"
 
-coroutines = "1.9.0"
+coroutines = "1.10.2"
 
 junit = "4.13.2"
 androidx-test-junit = "1.2.1"
