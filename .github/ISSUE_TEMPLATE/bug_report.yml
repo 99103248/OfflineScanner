@@ -1,0 +1,102 @@
+name: Bug 报告
+description: 提交一个明确的 bug
+title: "[Bug] "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告 bug！请尽量提供完整信息以加速排查。
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经在 [Issues](../issues) 中搜索过相同问题
+          required: true
+        - label: 我已经用最新版本（main 或最新 release）复现过
+          required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述
+      description: 简明扼要地描述出了什么问题
+      placeholder: 在 OCR 中文页面点「自动」按钮，APP 闪退……
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 越具体越好
+      placeholder: |
+        1. 启动 APP
+        2. 点底部"工具"
+        3. 选"图片转文字"
+        4. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期行为
+      placeholder: 应该显示识别结果
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      placeholder: APP 闪退 / 卡死 / 显示空白 / 报错 ...
+    validations:
+      required: true
+
+  - type: input
+    id: device
+    attributes:
+      label: 设备型号
+      placeholder: Pixel 6, 小米 13, Galaxy S22 ...
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android 版本
+      placeholder: Android 14
+    validations:
+      required: true
+
+  - type: dropdown
+    id: apk-source
+    attributes:
+      label: APK 来源
+      options:
+        - 自己从源码构建的 debug 包
+        - 自己从源码构建的 release 包
+        - GitHub Releases 下载
+        - 其它（请在描述中说明）
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志（如有崩溃）
+      description: |
+        参考命令：
+        ```
+        adb logcat -s ScannerApp:* RapidOCR:* OpenCV:* PaddleOcrEngine:* EdgeDetector:*
+        ```
+      render: shell
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: 其它信息
+      description: 截图、录屏、相关 issue 链接等

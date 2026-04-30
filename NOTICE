@@ -1,0 +1,101 @@
+OffScan
+Copyright 2026 OffScan Contributors
+
+This product includes software developed by the following projects:
+
+================================================================
+  Apache License 2.0 dependencies
+================================================================
+
+* AndroidX Libraries (Core / Lifecycle / Compose / Navigation /
+  CameraX / Room / DocumentFile / Hilt-Navigation / Activity)
+  Copyright The Android Open Source Project
+  https://developer.android.com/jetpack
+
+* Kotlin & kotlinx.coroutines
+  Copyright JetBrains s.r.o.
+  https://kotlinlang.org/
+
+* Hilt / Dagger
+  Copyright Google LLC
+  https://dagger.dev/hilt/
+
+* Material 3 / Material Icons Extended
+  Copyright Google LLC
+  https://m3.material.io/
+
+* Coil
+  Copyright Coil Contributors
+  https://coil-kt.github.io/coil/
+
+* Accompanist
+  Copyright Google LLC
+  https://google.github.io/accompanist/
+
+* OpenCV (org.opencv:opencv:4.10.0)
+  Copyright OpenCV Team
+  https://opencv.org/
+  Licensed under Apache License 2.0 (versions >= 4.5.0)
+
+* PaddleOCR (PP-OCRv4 model files)
+  Copyright PaddlePaddle Authors
+  https://github.com/PaddlePaddle/PaddleOCR
+  The pre-trained PP-OCRv4 detection / recognition / classifier models
+  are bundled inside the RapidOCR4j-Android AAR and used here under
+  Apache License 2.0.
+
+* RapidOCR4j-Android (io.github.hzkitty:rapidocr4j-android:1.0.0)
+  Copyright hzkitty
+  https://github.com/hzkitty/RapidOCR4j-Android
+
+================================================================
+  MIT License dependencies
+================================================================
+
+* ONNX Runtime (transitive dependency of RapidOCR4j-Android)
+  Copyright (c) Microsoft Corporation
+  https://github.com/microsoft/onnxruntime
+
+* Mockito (test only)
+  Copyright (c) Mockito Contributors
+  https://github.com/mockito/mockito
+
+================================================================
+  Eclipse Public License 1.0 (test only)
+================================================================
+
+* JUnit 4
+  Copyright JUnit Team
+  https://junit.org/junit4/
+
+================================================================
+  Proprietary Terms
+================================================================
+
+* Google ML Kit (com.google.mlkit:text-recognition,
+  com.google.mlkit:text-recognition-chinese)
+  Copyright Google LLC
+  https://developers.google.com/ml-kit
+
+  ML Kit is a Google proprietary library that is free for use
+  (including in commercial and open-source applications), but its
+  binaries and on-device models are NOT covered by this project's
+  Apache 2.0 license. Use of ML Kit in this project is governed by:
+    https://developers.google.com/ml-kit/terms
+
+  In particular: you may not reverse-engineer ML Kit binaries or
+  attempt to extract their source code or models.
+
+================================================================
+  Trademark Notice
+================================================================
+
+This project is an independent open-source effort and is NOT
+affiliated with, endorsed by, or sponsored by any commercial
+document scanning product or its trademark holders.
+"OffScan" is the project's own name; it is intentionally chosen
+to avoid confusion with any third-party trademarks.
+
+----
+Full third-party license details are available in
+THIRD_PARTY_LICENSES.md.

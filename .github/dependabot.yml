@@ -1,0 +1,34 @@
+version: 2
+updates:
+  # Gradle 依赖（含 AndroidX / Compose / OpenCV / RapidOCR / ML Kit / Hilt 等）
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
+      timezone: "Asia/Shanghai"
+    open-pull-requests-limit: 10
+    labels:
+      - "dependencies"
+      - "gradle"
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    # 忽略某些容易把项目改坏的依赖（例如 BOM 大版本跳跃需要人工 review）
+    ignore:
+      - dependency-name: "androidx.compose:compose-bom"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions workflow 自身
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

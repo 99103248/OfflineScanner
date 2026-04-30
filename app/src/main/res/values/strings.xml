@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OffScan</string>
+
+    <!-- 底部导航 -->
+    <string name="tab_home">文档</string>
+    <string name="tab_tools">工具</string>
+    <string name="tab_me">我的</string>
+
+    <!-- 主页 -->
+    <string name="home_title">我的文档</string>
+    <string name="home_empty">还没有扫描过任何文档\n点击右下角按钮开始扫描</string>
+    <string name="home_fab_scan">扫描</string>
+
+    <!-- 工具箱 -->
+    <string name="tools_title">工具箱</string>
+    <string name="tool_ocr">图片转文字</string>
+    <string name="tool_ocr_desc">提取图片中的文字</string>
+    <string name="tool_to_pdf">图片转 PDF</string>
+    <string name="tool_to_pdf_desc">多张图片合并为 PDF</string>
+    <string name="tool_to_word">图片转 Word</string>
+    <string name="tool_to_word_desc">OCR 后导出为 .docx</string>
+    <string name="tool_to_excel">图片转 Excel</string>
+    <string name="tool_to_excel_desc">识别表格导出 .xlsx</string>
+    <string name="tool_format">图片格式转换</string>
+    <string name="tool_format_desc">jpg / png / webp 互转</string>
+    <string name="tool_scan">拍照扫描</string>
+    <string name="tool_scan_desc">拍照并自动矫正</string>
+
+    <!-- 通用 -->
+    <string name="action_done">完成</string>
+    <string name="action_cancel">取消</string>
+    <string name="action_retake">重拍</string>
+    <string name="action_next">下一步</string>
+    <string name="action_back">返回</string>
+    <string name="action_save">保存</string>
+    <string name="action_share">分享</string>
+    <string name="action_delete">删除</string>
+    <string name="action_rename">重命名</string>
+    <string name="action_export">导出</string>
+    <string name="action_select_image">从相册选择</string>
+    <string name="action_take_photo">拍照</string>
+
+    <!-- 滤镜 -->
+    <string name="filter_original">原图</string>
+    <string name="filter_enhance">增强</string>
+    <string name="filter_grayscale">灰度</string>
+    <string name="filter_bw">黑白</string>
+    <string name="filter_magic">去阴影</string>
+
+    <!-- OCR -->
+    <string name="ocr_running">识别中...</string>
+    <string name="ocr_lang_auto">自动</string>
+    <string name="ocr_lang_chinese">中文</string>
+    <string name="ocr_lang_english">英文</string>
+    <string name="ocr_copy">复制全部</string>
+    <string name="ocr_export_txt">导出 TXT</string>
+
+    <!-- 我的 -->
+    <string name="me_title">我的</string>
+    <string name="me_settings">设置</string>
+    <string name="me_about">关于</string>
+    <string name="me_default_export_dir">默认导出目录</string>
+    <string name="me_ocr_engine">OCR 引擎选择</string>
+
+    <!-- 错误提示 -->
+    <string name="error_camera_permission">需要相机权限才能拍照扫描</string>
+    <string name="error_storage_permission">需要存储权限才能读取相册</string>
+    <string name="error_no_image">请先选择或拍摄图片</string>
+    <string name="error_export_failed">导出失败：%1$s</string>
+    <string name="error_ocr_failed">识别失败：%1$s</string>
+
+    <string name="success_export">已导出到：%1$s</string>
+    <string name="success_save">已保存</string>
+</resources>

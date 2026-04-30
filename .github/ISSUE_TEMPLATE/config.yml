@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 提问 / 讨论
+    url: ../../discussions
+    about: 不是 bug、不是功能建议的提问，请到 Discussions 区
