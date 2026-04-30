@@ -15,10 +15,27 @@ updates:
     commit-message:
       prefix: "build"
       include: "scope"
-    # 忽略某些容易把项目改坏的依赖（例如 BOM 大版本跳跃需要人工 review）
+    # 忽略某些会引入级联升级、需要人工策划的依赖
     ignore:
+      # Compose BOM 大版本跳跃常常带 Kotlin 升级要求
       - dependency-name: "androidx.compose:compose-bom"
         update-types: ["version-update:semver-major"]
+
+      # KSP 必须严格匹配 Kotlin 版本，要协调升级
+      - dependency-name: "com.google.devtools.ksp"
+
+      # AGP 大版本（9.x+）会要求新 compileSdk / 移除旧 DSL，需手动迁移
+      - dependency-name: "com.android.application"
+        update-types: ["version-update:semver-major"]
+
+      # 下面这组库的当前主版本要求 compileSdk 36 + AGP 8.9+。
+      # 等本项目把 compileSdk / AGP 一起升级后可以删掉这块 ignore。
+      - dependency-name: "androidx.lifecycle:*"
+        versions: [">=2.10.0"]
+      - dependency-name: "androidx.activity:activity-compose"
+        versions: [">=1.13.0"]
+      - dependency-name: "androidx.camera:*"
+        versions: [">=1.6.0"]
 
   # GitHub Actions workflow 自身
   - package-ecosystem: "github-actions"
