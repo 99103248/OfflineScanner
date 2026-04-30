@@ -1,0 +1,53 @@
+# 默认所有文本文件由 git 自动判定行尾
+* text=auto
+
+# ================================================================
+# 强制 LF（这些文件如果含 CRLF 会在 Linux/macOS 上无法运行）
+# ================================================================
+gradlew text eol=lf
+*.sh text eol=lf
+*.bash text eol=lf
+
+# YAML / JSON / TOML 配置统一 LF
+*.yml text eol=lf
+*.yaml text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+
+# Kotlin / Java / Gradle 脚本统一 LF（避免 jvmCompile 时序列化 hash 抖动）
+*.kt text eol=lf
+*.kts text eol=lf
+*.java text eol=lf
+*.groovy text eol=lf
+
+# Markdown / 文本类（默认就 LF，避免双行尾）
+*.md text eol=lf
+
+# Properties 文件（包括 gradle.properties）—— LF
+*.properties text eol=lf
+
+# ================================================================
+# 强制 CRLF（仅 Windows 批处理）
+# ================================================================
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# ================================================================
+# 二进制文件 —— 永不转换
+# ================================================================
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.jar binary
+*.aar binary
+*.so binary
+*.zip binary
+*.gz binary
+*.keystore binary
+*.jks binary
+*.tflite binary
+*.nb binary
+*.onnx binary
