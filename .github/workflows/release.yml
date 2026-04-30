@@ -1,0 +1,101 @@
+name: Release APK
+
+on:
+  # 仅在打了 v* tag 时触发
+  push:
+    tags:
+      - 'v*'
+  # 允许手动触发（指定 tag）
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to build (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write  # 允许把 APK 上传到 Release
+
+jobs:
+  build:
+    name: Build & Sign Release
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+
+      - name: Detect signing capability
+        id: signing
+        run: |
+          if [[ -n "${{ secrets.OFFSCAN_KEYSTORE_BASE64 }}" ]]; then
+            echo "can_sign=true" >> "$GITHUB_OUTPUT"
+            echo "Release signing: ENABLED"
+          else
+            echo "can_sign=false" >> "$GITHUB_OUTPUT"
+            echo "Release signing: DISABLED (no keystore secret found, will skip release build)"
+          fi
+
+      - name: Assemble release APK (signed)
+        if: steps.signing.outputs.can_sign == 'true'
+        env:
+          OFFSCAN_KEYSTORE_BASE64: ${{ secrets.OFFSCAN_KEYSTORE_BASE64 }}
+          OFFSCAN_KEYSTORE_PASSWORD: ${{ secrets.OFFSCAN_KEYSTORE_PASSWORD }}
+          OFFSCAN_KEY_ALIAS: ${{ secrets.OFFSCAN_KEY_ALIAS }}
+          OFFSCAN_KEY_PASSWORD: ${{ secrets.OFFSCAN_KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Assemble debug APK (fallback / always)
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Compute release tag
+        id: tag
+        run: |
+          if [[ -n "${{ github.event.inputs.tag }}" ]]; then
+            echo "tag=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rename APKs for release
+        run: |
+          mkdir -p release-assets
+          tag="${{ steps.tag.outputs.tag }}"
+          if [[ -f app/build/outputs/apk/release/app-release.apk ]]; then
+            cp app/build/outputs/apk/release/app-release.apk "release-assets/offscan-${tag}-release.apk"
+          fi
+          if [[ -f app/build/outputs/apk/debug/app-debug.apk ]]; then
+            cp app/build/outputs/apk/debug/app-debug.apk "release-assets/offscan-${tag}-debug.apk"
+          fi
+          ls -la release-assets/
+
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          files: release-assets/*.apk
+          # 不覆盖已有的 release notes（如果用户已经手写过）
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+
+      - name: Upload APK as workflow artifact (for inspection)
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ steps.tag.outputs.tag }}
+          path: release-assets/*.apk
+          retention-days: 30

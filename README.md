@@ -194,6 +194,10 @@ UI 完全不需要改动。
 
 参与项目即表示你认可项目的 [行为准则](./CODE_OF_CONDUCT.md)。
 
+### 维护者文档
+
+- [docs/RELEASE_SIGNING.md](./docs/RELEASE_SIGNING.md) — 配置 release APK 签名 CI（如何生成 keystore + GitHub Secrets）
+
 ---
 
 ## 相关链接

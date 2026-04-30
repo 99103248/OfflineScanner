@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -21,10 +23,51 @@ android {
         vectorDrawables { useSupportLibrary = true }
 
         ndk {
-            // 仅 64 位 ARM，覆盖 95%+ 现代 Android 手机；APK 减半。
-            // 如果需要支持 32 位老机型，把 "armeabi-v7a" 加回来。
-            // 如果要在 x86_64 模拟器测试，加 "x86_64"（开发期临时用）。
+            // 默认仅 64 位 ARM，覆盖 95%+ 现代 Android 手机；APK 减半。
+            // CI 跑 connectedAndroidTest 时（GitHub runner 的 emulator 是 x86_64），
+            // 通过环境变量 CI_ANDROID_TEST=true 临时把 x86_64 加进来，
+            // 这样不污染默认的 release/debug APK，也不需要单独的 build variant。
             abiFilters += listOf("arm64-v8a")
+            if (System.getenv("CI_ANDROID_TEST") == "true") {
+                abiFilters += "x86_64"
+            }
+        }
+    }
+
+    // ─── 发布签名配置 ─────────────────────────────────────
+    // 本地与 CI 都从环境变量读取签名信息，不在仓库里硬编码任何路径或密码。
+    //
+    // 必须的 4 个变量：
+    //   OFFSCAN_KEYSTORE_BASE64   keystore 文件的 base64 编码（CI 友好）
+    //   OFFSCAN_KEYSTORE_PASSWORD keystore 密码
+    //   OFFSCAN_KEY_ALIAS         证书 alias
+    //   OFFSCAN_KEY_PASSWORD      证书 password
+    //
+    // 任意一个缺失就跳过签名（release APK 仍能编译，但产物 unsigned）。
+    val keystoreBase64 = System.getenv("OFFSCAN_KEYSTORE_BASE64")
+    val keystorePassword = System.getenv("OFFSCAN_KEYSTORE_PASSWORD")
+    val keyAlias = System.getenv("OFFSCAN_KEY_ALIAS")
+    val keyPassword = System.getenv("OFFSCAN_KEY_PASSWORD")
+    val canSignRelease = !keystoreBase64.isNullOrBlank() &&
+        !keystorePassword.isNullOrBlank() &&
+        !keyAlias.isNullOrBlank() &&
+        !keyPassword.isNullOrBlank()
+
+    if (canSignRelease) {
+        signingConfigs {
+            create("release") {
+                // 把 base64 keystore 解码到一个临时文件
+                val keystoreFile = layout.buildDirectory.file("ci-keystore.jks").get().asFile.apply {
+                    parentFile.mkdirs()
+                    writeBytes(Base64.getDecoder().decode(keystoreBase64))
+                }
+                storeFile = keystoreFile
+                storePassword = keystorePassword
+                this.keyAlias = keyAlias
+                this.keyPassword = keyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+            }
         }
     }
 
@@ -39,6 +82,11 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            if (canSignRelease) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+            // 如果没配 keystore，release APK 会是 unsigned；
+            // CI 流程 (.github/workflows/release.yml) 会跳过 release 而保留 debug 包发布。
         }
     }
     compileOptions {

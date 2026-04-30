@@ -1,0 +1,110 @@
+name: Android Instrumentation Tests
+
+on:
+  # 每天 03:00 UTC（北京时间 11:00）跑一次，catch 上游依赖回归
+  schedule:
+    - cron: '0 3 * * *'
+
+  # PR 到 main 时跑
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      # 只在影响 native / OCR / Storage 的代码改动时跑（节省 Actions 时间）
+      - 'app/src/main/**'
+      - 'app/src/androidTest/**'
+      - 'app/build.gradle.kts'
+      - 'gradle/libs.versions.toml'
+      - 'gradle/wrapper/**'
+      - '.github/workflows/android-test.yml'
+
+  # 允许手动触发
+  workflow_dispatch:
+
+concurrency:
+  group: android-test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  instrumentation:
+    name: connectedDebugAndroidTest (API 34, x86_64)
+    # 必须用 ubuntu-latest（emulator 需要 KVM；macOS-latest 也行但慢且贵）
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Grant execute permission to gradlew
+        run: chmod +x gradlew
+
+      # KVM 加速对 emulator 速度至关重要（>10x），ubuntu-latest 默认有 kvm
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # 每个 API level 的 system image 编译一次缓存（节省 5-10 分钟）
+      - name: AVD cache
+        uses: actions/cache@v4
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: avd-api34-x86_64-google_apis-v1
+
+      - name: Create AVD and snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          script: echo "Generated AVD snapshot for caching."
+
+      - name: Run instrumentation tests
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # 触发 build.gradle.kts 中的 x86_64 abi 注入
+          CI_ANDROID_TEST: 'true'
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          force-avd-creation: false
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          disable-animations: true
+          # 给 emulator 更多内存，OCR 模型会用 ~500MB
+          ram-size: 4096M
+          heap-size: 1024M
+          script: |
+            # 等 emulator 完全启动
+            adb wait-for-device shell 'while [[ -z $(getprop sys.boot_completed) ]]; do sleep 1; done'
+            adb shell input keyevent 82  # 解锁屏幕
+
+            # 跑测试（不跑 OCR 模型类的耗时测试，OCR 单独触发）
+            ./gradlew connectedDebugAndroidTest --stacktrace
+
+      - name: Upload AndroidTest report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: connected-test-report-${{ github.sha }}
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          retention-days: 14
