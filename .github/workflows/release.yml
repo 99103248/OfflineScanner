@@ -63,13 +63,39 @@ jobs:
           OFFSCAN_KEYSTORE_PASSWORD: ${{ secrets.OFFSCAN_KEYSTORE_PASSWORD }}
           OFFSCAN_KEY_ALIAS: ${{ secrets.OFFSCAN_KEY_ALIAS }}
           OFFSCAN_KEY_PASSWORD: ${{ secrets.OFFSCAN_KEY_PASSWORD }}
-        # --no-build-cache 禁用 Gradle 的 build cache（gradle.properties 里 org.gradle.caching=true）。
-        # 必须禁，因为我们的 signingConfig 从环境变量读取，但 Gradle 不会把 env var 算进
-        # cache key —— 改 secret 后 cache 仍命中，导致复用旧（可能是 unsigned）的 APK。
-        # --rerun-tasks 进一步强制所有 task 重跑，跳过 UP-TO-DATE 检查，杜绝任何缓存污染。
-        # --info 输出更详细的日志，方便诊断 signingConfig 是否真的被采用。
-        run: ./gradlew assembleRelease --no-build-cache --rerun-tasks --info --stacktrace 2>&1 | tee assemble-release.log
-        # tee 把日志同时存到文件，万一截断，artifact 里也能找到完整日志
+        run: |
+          # Sanity check: 确认 shell 看得到所有 env var（不打值，只打长度）。
+          # GitHub 自动把 secret 值替换为 ***，长度不会泄漏 secret 内容。
+          echo "=== Shell-level env check ==="
+          echo "  OFFSCAN_KEYSTORE_BASE64 length: ${#OFFSCAN_KEYSTORE_BASE64}"
+          echo "  OFFSCAN_KEYSTORE_PASSWORD length: ${#OFFSCAN_KEYSTORE_PASSWORD}"
+          echo "  OFFSCAN_KEY_ALIAS length: ${#OFFSCAN_KEY_ALIAS}"
+          echo "  OFFSCAN_KEY_PASSWORD length: ${#OFFSCAN_KEY_PASSWORD}"
+          echo ""
+
+          # --no-daemon: daemon 复用会让进程级缓存的 env var 不刷新（这次跑的 daemon 是
+          #              其它 step 启动的，env var 是当时的，没有我们的 OFFSCAN_*）。
+          #              不用 daemon 就保证每次 build 都是新进程拿当前 env。
+          # --no-build-cache: signingConfig 从 env var 读取，Gradle 不会把这些 env var
+          #                   算进 cache key — 改 secret 后旧 APK 会被 cache 复用。
+          # --rerun-tasks: 跳过 UP-TO-DATE 检查，强制每个 task 都重新执行。
+          # --info: 更详细日志，方便排查 signingConfig 是否真的生效。
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --no-build-cache \
+            --rerun-tasks \
+            --info \
+            --stacktrace \
+            2>&1 | tee assemble-release.log
+
+      - name: Upload build log (always, for debugging)
+        if: steps.signing.outputs.can_sign == 'true' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assemble-release-log-${{ github.run_id }}
+          path: assemble-release.log
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Verify release APK is signed
         if: steps.signing.outputs.can_sign == 'true'
@@ -81,7 +107,11 @@ jobs:
           fi
           echo "Found release APK: $apk"
           if [[ "$apk" == *unsigned* ]]; then
-            echo "::error::APK was produced but NOT signed (path contains 'unsigned'). Check signingConfigs in app/build.gradle.kts and that all 4 secrets are correct."
+            echo "::error::APK was produced but NOT signed (path contains 'unsigned')."
+            echo "Check signingConfigs in app/build.gradle.kts and that all 4 secrets are correct."
+            echo ""
+            echo "=== Configuration phase output for diagnosis ==="
+            grep -i "OffScan signing" assemble-release.log || echo "(no [OffScan signing] lines found in build log)"
             exit 1
           fi
           # apksigner 验签（jarsigner 也行，但 apksigner 是 Android 官方推荐）
