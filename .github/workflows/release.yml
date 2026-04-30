@@ -34,7 +34,7 @@ jobs:
           java-version: '17'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v6
         with:
           # 强制 release build 不从 Gradle Build Cache 取产物。
           # 原因：keystore 信息从环境变量读取，但 Gradle 不会把这些 env var
