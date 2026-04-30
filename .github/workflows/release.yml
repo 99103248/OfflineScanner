@@ -63,7 +63,13 @@ jobs:
           OFFSCAN_KEYSTORE_PASSWORD: ${{ secrets.OFFSCAN_KEYSTORE_PASSWORD }}
           OFFSCAN_KEY_ALIAS: ${{ secrets.OFFSCAN_KEY_ALIAS }}
           OFFSCAN_KEY_PASSWORD: ${{ secrets.OFFSCAN_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease --stacktrace
+        # --no-build-cache 禁用 Gradle 的 build cache（gradle.properties 里 org.gradle.caching=true）。
+        # 必须禁，因为我们的 signingConfig 从环境变量读取，但 Gradle 不会把 env var 算进
+        # cache key —— 改 secret 后 cache 仍命中，导致复用旧（可能是 unsigned）的 APK。
+        # --rerun-tasks 进一步强制所有 task 重跑，跳过 UP-TO-DATE 检查，杜绝任何缓存污染。
+        # --info 输出更详细的日志，方便诊断 signingConfig 是否真的被采用。
+        run: ./gradlew assembleRelease --no-build-cache --rerun-tasks --info --stacktrace 2>&1 | tee assemble-release.log
+        # tee 把日志同时存到文件，万一截断，artifact 里也能找到完整日志
 
       - name: Verify release APK is signed
         if: steps.signing.outputs.can_sign == 'true'

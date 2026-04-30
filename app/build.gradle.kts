@@ -53,12 +53,14 @@ android {
         keyAlias.isNotBlank() &&
         keyPassword.isNotBlank()
 
-    // 调试日志：打印 env var 是否存在（不泄漏值），帮助排查 CI 签名问题
-    println("[OffScan signing] OFFSCAN_KEYSTORE_BASE64 length=${keystoreBase64.length}")
-    println("[OffScan signing] OFFSCAN_KEYSTORE_PASSWORD blank=${keystorePassword.isBlank()}")
-    println("[OffScan signing] OFFSCAN_KEY_ALIAS blank=${keyAlias.isBlank()}")
-    println("[OffScan signing] OFFSCAN_KEY_PASSWORD blank=${keyPassword.isBlank()}")
-    println("[OffScan signing] canSignRelease=$canSignRelease")
+    // 调试日志：打印 env var 是否存在（不泄漏值），帮助排查 CI 签名问题。
+    // 用 logger.lifecycle 而非 println —— println 在 configuration cache 启用时会被
+    // Gradle 重定向到 INFO 级别，CI 默认 LIFECYCLE 级别看不到。
+    logger.lifecycle("[OffScan signing] OFFSCAN_KEYSTORE_BASE64 length=${keystoreBase64.length}")
+    logger.lifecycle("[OffScan signing] OFFSCAN_KEYSTORE_PASSWORD blank=${keystorePassword.isBlank()}")
+    logger.lifecycle("[OffScan signing] OFFSCAN_KEY_ALIAS blank=${keyAlias.isBlank()}")
+    logger.lifecycle("[OffScan signing] OFFSCAN_KEY_PASSWORD blank=${keyPassword.isBlank()}")
+    logger.lifecycle("[OffScan signing] canSignRelease=$canSignRelease")
 
     // signingConfigs 始终声明 release block（哪怕 secret 缺失），
     // 这样 buildTypes.release.signingConfig 引用时不会崩；
@@ -71,7 +73,7 @@ android {
                     parentFile.mkdirs()
                     writeBytes(Base64.getDecoder().decode(keystoreBase64))
                 }
-                println("[OffScan signing] Wrote keystore to: ${keystoreFile.absolutePath} (${keystoreFile.length()} bytes)")
+                logger.lifecycle("[OffScan signing] Wrote keystore to: ${keystoreFile.absolutePath} (${keystoreFile.length()} bytes)")
                 storeFile = keystoreFile
                 storePassword = keystorePassword
                 this.keyAlias = keyAlias
