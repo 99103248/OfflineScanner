@@ -90,7 +90,7 @@ jobs:
 
       - name: Upload build log (always, for debugging)
         if: steps.signing.outputs.can_sign == 'true' && always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: assemble-release-log-${{ github.run_id }}
           path: assemble-release.log
@@ -181,7 +181,7 @@ jobs:
           fail_on_unmatched_files: true
 
       - name: Upload APK as workflow artifact (for inspection)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: release-${{ steps.tag.outputs.tag }}
           path: release-assets/*.apk
