@@ -35,6 +35,12 @@ jobs:
 
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          # 强制 release build 不从 Gradle Build Cache 取产物。
+          # 原因：keystore 信息从环境变量读取，但 Gradle 不会把这些 env var
+          # 算进 cache key，于是改 secret 后 cache 仍命中、产出旧 APK。
+          # 禁用 cache 后每次都从源码 build，多花 2-3 分钟但可信度满分。
+          cache-disabled: true
 
       - name: Grant execute permission to gradlew
         run: chmod +x gradlew

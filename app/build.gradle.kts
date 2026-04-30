@@ -44,23 +44,34 @@ android {
     //   OFFSCAN_KEY_PASSWORD      证书 password
     //
     // 任意一个缺失就跳过签名（release APK 仍能编译，但产物 unsigned）。
-    val keystoreBase64 = System.getenv("OFFSCAN_KEYSTORE_BASE64")
-    val keystorePassword = System.getenv("OFFSCAN_KEYSTORE_PASSWORD")
-    val keyAlias = System.getenv("OFFSCAN_KEY_ALIAS")
-    val keyPassword = System.getenv("OFFSCAN_KEY_PASSWORD")
-    val canSignRelease = !keystoreBase64.isNullOrBlank() &&
-        !keystorePassword.isNullOrBlank() &&
-        !keyAlias.isNullOrBlank() &&
-        !keyPassword.isNullOrBlank()
+    val keystoreBase64 = System.getenv("OFFSCAN_KEYSTORE_BASE64").orEmpty()
+    val keystorePassword = System.getenv("OFFSCAN_KEYSTORE_PASSWORD").orEmpty()
+    val keyAlias = System.getenv("OFFSCAN_KEY_ALIAS").orEmpty()
+    val keyPassword = System.getenv("OFFSCAN_KEY_PASSWORD").orEmpty()
+    val canSignRelease = keystoreBase64.isNotBlank() &&
+        keystorePassword.isNotBlank() &&
+        keyAlias.isNotBlank() &&
+        keyPassword.isNotBlank()
 
-    if (canSignRelease) {
-        signingConfigs {
-            create("release") {
-                // 把 base64 keystore 解码到一个临时文件
+    // 调试日志：打印 env var 是否存在（不泄漏值），帮助排查 CI 签名问题
+    println("[OffScan signing] OFFSCAN_KEYSTORE_BASE64 length=${keystoreBase64.length}")
+    println("[OffScan signing] OFFSCAN_KEYSTORE_PASSWORD blank=${keystorePassword.isBlank()}")
+    println("[OffScan signing] OFFSCAN_KEY_ALIAS blank=${keyAlias.isBlank()}")
+    println("[OffScan signing] OFFSCAN_KEY_PASSWORD blank=${keyPassword.isBlank()}")
+    println("[OffScan signing] canSignRelease=$canSignRelease")
+
+    // signingConfigs 始终声明 release block（哪怕 secret 缺失），
+    // 这样 buildTypes.release.signingConfig 引用时不会崩；
+    // storeFile 如果没有 secret 就指向一个不存在的占位路径，AGP 会因此自动
+    // 输出 unsigned APK 而非 signed APK。
+    signingConfigs {
+        create("release") {
+            if (canSignRelease) {
                 val keystoreFile = layout.buildDirectory.file("ci-keystore.jks").get().asFile.apply {
                     parentFile.mkdirs()
                     writeBytes(Base64.getDecoder().decode(keystoreBase64))
                 }
+                println("[OffScan signing] Wrote keystore to: ${keystoreFile.absolutePath} (${keystoreFile.length()} bytes)")
                 storeFile = keystoreFile
                 storePassword = keystorePassword
                 this.keyAlias = keyAlias
@@ -85,8 +96,8 @@ android {
             if (canSignRelease) {
                 signingConfig = signingConfigs.getByName("release")
             }
-            // 如果没配 keystore，release APK 会是 unsigned；
-            // CI 流程 (.github/workflows/release.yml) 会跳过 release 而保留 debug 包发布。
+            // 没配 keystore 时 release APK 会是 unsigned；
+            // CI 流程 (.github/workflows/release.yml) 的 verify 步骤会捕获并报错。
         }
     }
     compileOptions {
