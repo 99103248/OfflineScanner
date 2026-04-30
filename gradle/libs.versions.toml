@@ -15,7 +15,7 @@ camerax = "1.4.1"
 mlkit-text = "16.0.1"
 mlkit-text-chinese = "16.0.1"
 
-room = "2.6.1"
+room = "2.8.4"
 coil = "2.7.0"
 accompanist = "0.37.0"
 
