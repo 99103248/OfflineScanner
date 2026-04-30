@@ -1,0 +1,36 @@
+name: Release Please
+
+# 自动维护 CHANGELOG.md 和发布流程：
+#
+#  1. 监听 main 上的 push，扫描自上次 release 以来的 conventional commits
+#     （feat / fix / build / refactor / docs / etc.）
+#  2. 持续维护一个 "release-please--branches--main" PR，里面是
+#     CHANGELOG.md + 版本号自动 bump 的 diff
+#  3. 你 merge 这个 PR 时：
+#       - 自动打新 tag（如 v1.1.0）
+#       - 推 tag 触发 release.yml，构建 + 签名 release APK 上传到 GitHub Release
+#       - 更新 CHANGELOG.md
+#
+# 配置参考：https://github.com/googleapis/release-please-action
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # release-type: simple 适合"非语言生态"的项目（不是 npm/pypi 等）
+          # 它会根据 conventional commits 维护一个 version.txt 与 CHANGELOG.md
+          release-type: simple
+          # 我们当前已发布的最高版本是 v1.0.1
+          # 之后所有 commit 进来后，semver 会按 commit 类型自动决定 patch/minor/major
+          # 详见 https://www.conventionalcommits.org/

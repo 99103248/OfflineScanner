@@ -3,12 +3,16 @@
 > 一款 100% 离线运行的 Android 文档扫描应用，所有图像处理、文字识别和文档导出全部在手机本地完成，**不向任何服务器上传任何数据**。
 
 [![CI](https://github.com/99103248/OfflineScanner/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/99103248/OfflineScanner/actions/workflows/ci.yml)
+[![Android Tests](https://github.com/99103248/OfflineScanner/actions/workflows/android-test.yml/badge.svg?branch=main)](https://github.com/99103248/OfflineScanner/actions/workflows/android-test.yml)
+[![Latest Release](https://img.shields.io/github/v/release/99103248/OfflineScanner?label=APK&color=brightgreen)](https://github.com/99103248/OfflineScanner/releases/latest)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 [![Android](https://img.shields.io/badge/Android-10%2B-green.svg)](#)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0.21-purple.svg)](https://kotlinlang.org/)
 [![Compose](https://img.shields.io/badge/Jetpack%20Compose-Material3-orange.svg)](https://developer.android.com/jetpack/compose)
 
-> **新手须知**：第一次跑这个项目，请先看 [SETUP.md](./SETUP.md) 完成开发环境搭建。
+> **想直接安装？** 到 [Releases](https://github.com/99103248/OfflineScanner/releases/latest) 页面下载 `offscan-vX.Y.Z-release.apk`（已签名，约 70 MB）。
+>
+> **想跑源码？** 第一次运行项目前，请先看 [SETUP.md](./SETUP.md) 完成开发环境搭建。
 
 ---
 

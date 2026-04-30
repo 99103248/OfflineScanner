@@ -148,6 +148,19 @@ git push origin feature/short-description
 - 在合并 PR 前会运行完整 CI（lint + 单元测试）
 - PR 通常 3-7 天内得到反馈；如长期无回复，欢迎在 issue 里 @ 维护者催一下
 
+### 如何发版（仅维护者）
+
+项目使用 [release-please](https://github.com/googleapis/release-please) 自动管理 CHANGELOG 和发布。**你几乎不需要手动操作 tag**：
+
+1. 平时 merge PR 到 `main`（用规范的 conventional commit 前缀：`feat:` / `fix:` / `docs:` 等）
+2. release-please bot 会自动持续维护一个 PR，标题类似 `chore(main): release 1.1.0`
+3. 该 PR 包含：自动生成的 `CHANGELOG.md` 更新 + `version.txt` 版本号 bump
+4. **你 merge 这个 PR** —— 会自动：
+   - 打新 tag（`v1.1.0`）
+   - 触发 [release.yml](./.github/workflows/release.yml)，构建签名 release APK 并上传到 GitHub Release
+
+如果某个 commit **不应该出现在 CHANGELOG**（例如调整 README typo），用 `chore:` 前缀。
+
 ---
 
 感谢你的贡献！🎉
