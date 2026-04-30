@@ -59,6 +59,26 @@ jobs:
           OFFSCAN_KEY_PASSWORD: ${{ secrets.OFFSCAN_KEY_PASSWORD }}
         run: ./gradlew assembleRelease --stacktrace
 
+      - name: Verify release APK is signed
+        if: steps.signing.outputs.can_sign == 'true'
+        run: |
+          apk=$(ls app/build/outputs/apk/release/app-release*.apk 2>/dev/null | head -n 1)
+          if [[ -z "$apk" ]]; then
+            echo "::error::No release APK was produced"
+            exit 1
+          fi
+          echo "Found release APK: $apk"
+          if [[ "$apk" == *unsigned* ]]; then
+            echo "::error::APK was produced but NOT signed (path contains 'unsigned'). Check signingConfigs in app/build.gradle.kts and that all 4 secrets are correct."
+            exit 1
+          fi
+          # apksigner 验签（jarsigner 也行，但 apksigner 是 Android 官方推荐）
+          "$ANDROID_HOME/build-tools"/*/apksigner verify --verbose "$apk" || {
+            echo "::error::apksigner refused this APK"
+            exit 1
+          }
+          echo "OK release APK is properly signed"
+
       - name: Assemble debug APK (fallback / always)
         run: ./gradlew assembleDebug --stacktrace
 
@@ -75,12 +95,31 @@ jobs:
         run: |
           mkdir -p release-assets
           tag="${{ steps.tag.outputs.tag }}"
-          if [[ -f app/build/outputs/apk/release/app-release.apk ]]; then
-            cp app/build/outputs/apk/release/app-release.apk "release-assets/offscan-${tag}-release.apk"
+
+          # 列出 release/ 目录里实际产物，方便排查
+          echo "--- contents of app/build/outputs/apk/release ---"
+          ls -la app/build/outputs/apk/release/ || true
+          echo "--- contents of app/build/outputs/apk/debug ---"
+          ls -la app/build/outputs/apk/debug/ || true
+          echo ""
+
+          # 复制 release APK：AGP 在不同情况下可能命名为 app-release.apk
+          # （已签名）或 app-release-unsigned.apk（未签名）。两种都接受。
+          release_apk=$(ls app/build/outputs/apk/release/app-release*.apk 2>/dev/null | head -n 1 || true)
+          if [[ -n "$release_apk" ]]; then
+            cp "$release_apk" "release-assets/offscan-${tag}-release.apk"
+            echo "Copied release APK: $release_apk"
+          else
+            echo "WARN: no release APK produced"
           fi
+
           if [[ -f app/build/outputs/apk/debug/app-debug.apk ]]; then
             cp app/build/outputs/apk/debug/app-debug.apk "release-assets/offscan-${tag}-debug.apk"
+            echo "Copied debug APK"
           fi
+
+          echo ""
+          echo "--- final release-assets contents ---"
           ls -la release-assets/
 
       - name: Upload to Release
