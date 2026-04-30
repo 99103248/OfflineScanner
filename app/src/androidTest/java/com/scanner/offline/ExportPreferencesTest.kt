@@ -47,12 +47,12 @@ class ExportPreferencesTest {
     }
 
     @Test
-    fun `初始状态_自定义目录为空`() {
+    fun initial_state_custom_dir_is_null() {
         assertNull("初始应没有自定义目录", prefs.getCustomExportDirUri())
     }
 
     @Test
-    fun `初始状态_describeCurrentDir 应返回默认目录提示`() {
+    fun initial_state_describeCurrentDir_returns_default_hint() {
         val text = prefs.describeCurrentDir()
         TestLog.kv("describeCurrentDir(default)", text)
         assertTrue(
@@ -64,9 +64,12 @@ class ExportPreferencesTest {
     /**
      * 直接把 raw URI 字符串写到 SharedPreferences，绕过 takePersistableUriPermission。
      * 这样能测"读取-渲染-清除"链路；不需要真去 SAF 选目录。
+     *
+     * 注意：测试方法名不能含空格——DEX 040+ 才支持，我们 minSdk 29 编译目标 DEX < 040，
+     * R8 dex 化时会拒绝含空格的 SimpleName。所以这里用 ASCII + 下划线命名。
      */
     @Test
-    fun `写入失效 URI 后_可被读出_describeCurrentDir 提示已失效`() {
+    fun invalid_uri_is_readable_and_described_as_failed() {
         val raw = "content://com.android.externalstorage.documents/tree/primary%3ATestDir"
         // 通过反射 / 直接写 SharedPreferences 来注入 URI，不走真实授权
         context.getSharedPreferences("export_preferences", Context.MODE_PRIVATE)
@@ -88,7 +91,7 @@ class ExportPreferencesTest {
     }
 
     @Test
-    fun `clearCustomExportDir 应当清空 URI`() {
+    fun clearCustomExportDir_resets_uri_to_null() {
         // 先伪造一个 URI 写进去
         context.getSharedPreferences("export_preferences", Context.MODE_PRIVATE)
             .edit()
