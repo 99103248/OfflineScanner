@@ -8,6 +8,13 @@ This file is automatically maintained by [release-please](https://github.com/goo
 
 ## [1.2.0](https://github.com/99103248/OfflineScanner/compare/v1.1.0...v1.2.0) (2026-05-20)
 
+
+### Features
+
+* document-to-image conversion and PDF layout options (v1.2.0) ([25aea56](https://github.com/99103248/OfflineScanner/commit/25aea560eb034d882350d75ee89f36ad8ae8fc52))
+
+## [1.2.0](https://github.com/99103248/OfflineScanner/compare/v1.1.0...v1.2.0) (2026-05-20)
+
 ### Features
 
 * **文档转图片**：支持 PDF、Word（.docx）、TXT 及图片，导出为 JPG / PNG / WebP（完全离线）
