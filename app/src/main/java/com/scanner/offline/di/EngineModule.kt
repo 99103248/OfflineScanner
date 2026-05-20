@@ -1,6 +1,7 @@
 package com.scanner.offline.di
 
 import com.scanner.offline.engine.export.DocumentExporter
+import com.scanner.offline.engine.export.FileToImageConverter
 import com.scanner.offline.engine.image.EdgeDetector
 import com.scanner.offline.engine.image.ImageFilter
 import com.scanner.offline.engine.image.PerspectiveCorrector
@@ -32,4 +33,7 @@ object EngineModule {
 
     @Provides @Singleton
     fun provideDocumentExporter(): DocumentExporter = DocumentExporter()
+
+    @Provides @Singleton
+    fun provideFileToImageConverter(): FileToImageConverter = FileToImageConverter()
 }

@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file is automatically maintained by [release-please](https://github.com/googleapis/release-please) — please do not edit it manually.
 
+## [1.2.0](https://github.com/99103248/OfflineScanner/compare/v1.1.0...v1.2.0) (2026-05-20)
+
+### Features
+
+* **文档转图片**：支持 PDF、Word（.docx）、TXT 及图片，导出为 JPG / PNG / WebP（完全离线）
+* **多页 PDF 排版**：可选择「多张图片」（每页一张）或「一张长图」（纵向拼接）
+* 工具箱「格式转换」界面升级：统一文件选择器，多文件结果列表与分享
+
+### Tests
+
+* 新增 `FileToImageIntegrationTest`（PDF / Word / TXT / 多页与长图）
+* 新增 `OoxmlReaderTest`（docx 文本提取）
+* 模拟器 API 34 完整仪器回归：19/19 通过
+
 ## [1.1.0](https://github.com/99103248/OfflineScanner/compare/v1.0.1...v1.1.0) (2026-04-30)
 
 

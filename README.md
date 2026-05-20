@@ -28,7 +28,7 @@
   - **AUTO**：自动判断中英比例并选择更合适的引擎
 - 📚 多页文档管理（Room 本地数据库）
 - 📤 导出为 **PDF / Word(.docx) / Excel(.xlsx) / TXT**
-- 🖼️ 图片格式互转（JPG / PNG / WebP）
+- 🖼️ 格式转换：图片互转（JPG / PNG / WebP）；**文档转图片**（PDF / Word / TXT → JPG / PNG / WebP；多页 PDF 支持「多张图片」或「一张长图」）
 - 📁 **自定义导出目录**：通过 SAF（Storage Access Framework）选择任意位置（Download、文件管理器自建文件夹等）
 - 🔗 系统分享面板分享文件
 - 🌗 Material Design 3 UI（自适应深色模式 + Material You 动态取色）

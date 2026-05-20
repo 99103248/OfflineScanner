@@ -22,8 +22,12 @@
     <string name="tool_to_word_desc">OCR 后导出为 .docx</string>
     <string name="tool_to_excel">图片转 Excel</string>
     <string name="tool_to_excel_desc">识别表格导出 .xlsx</string>
-    <string name="tool_format">图片格式转换</string>
-    <string name="tool_format_desc">jpg / png / webp 互转</string>
+    <string name="tool_format">格式转换</string>
+    <string name="tool_format_desc">PDF / Word / TXT / 图片 → 图片</string>
+    <string name="tool_format_hint">支持 PDF、Word(.docx)、TXT 及图片；多页 PDF 可导出多张图片或一张长图。</string>
+    <string name="tool_format_pdf_layout">PDF 排版</string>
+    <string name="tool_format_pick">选择文件</string>
+    <string name="tool_format_start">开始转换</string>
     <string name="tool_scan">拍照扫描</string>
     <string name="tool_scan_desc">拍照并自动矫正</string>
 

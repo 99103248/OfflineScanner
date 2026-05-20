@@ -13,11 +13,15 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.IosShare
+import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -52,6 +56,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.scanner.offline.R
 import com.scanner.offline.domain.model.ExportFormat
+import com.scanner.offline.domain.model.InputDocumentType
+import com.scanner.offline.domain.model.PdfImageLayout
 import com.scanner.offline.util.ShareUtils
 import com.scanner.offline.util.Time
 import kotlinx.coroutines.launch
@@ -68,19 +74,40 @@ fun FormatConvertScreen(
     val context = LocalContext.current
 
     var sourceUri by remember { mutableStateOf<String?>(null) }
+    var sourceLabel by remember { mutableStateOf<String?>(null) }
     var targetFormat by remember { mutableStateOf(ExportFormat.PNG) }
+    var pdfLayout by remember { mutableStateOf(PdfImageLayout.SEPARATE_PAGES) }
+    val isPdfSource = isPdfUri(sourceUri, sourceLabel)
 
-    val pickImage = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+    val pickDocument = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
-        sourceUri = uri?.toString()
+        if (uri != null) {
+            runCatching {
+                context.contentResolver.takePersistableUriPermission(
+                    uri,
+                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            sourceUri = uri.toString()
+            sourceLabel = uri.lastPathSegment ?: uri.toString()
+        }
     }
 
     LaunchedEffect(state.error) {
         state.error?.let { scope.launch { snackbar.showSnackbar(it) } }
     }
-    LaunchedEffect(state.lastResult) {
-        state.lastResult?.let { scope.launch { snackbar.showSnackbar("转换完成：${it.displayName}") } }
+    LaunchedEffect(state.lastResults) {
+        if (state.lastResults.isNotEmpty() && !state.running) {
+            val msg = when {
+                state.lastResults.size == 1 && state.lastResults.first().displayName.contains("_long") ->
+                    "转换完成：已生成长图 ${state.lastResults.first().displayName}"
+                state.lastResults.size == 1 ->
+                    "转换完成：${state.lastResults.first().displayName}"
+                else -> "转换完成：共 ${state.lastResults.size} 张图片"
+            }
+            scope.launch { snackbar.showSnackbar(msg) }
+        }
     }
 
     Scaffold(
@@ -101,15 +128,28 @@ fun FormatConvertScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Text(
+                stringResource(R.string.tool_format_hint),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+
             Card(modifier = Modifier.fillMaxWidth().height(220.dp)) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (sourceUri != null) {
-                        AsyncImage(
-                            model = sourceUri,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
-                            contentScale = ContentScale.Fit
-                        )
+                        if (isImageUri(sourceUri!!, sourceLabel)) {
+                            AsyncImage(
+                                model = sourceUri,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(12.dp)),
+                                contentScale = ContentScale.Fit
+                            )
+                        } else {
+                            DocumentPreview(
+                                label = sourceLabel,
+                                type = state.inputType
+                            )
+                        }
                     } else {
                         Column(
                             modifier = Modifier.fillMaxSize(),
@@ -117,14 +157,23 @@ fun FormatConvertScreen(
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
-                                imageVector = Icons.Outlined.Image,
+                                imageVector = Icons.Outlined.Description,
                                 contentDescription = null,
                                 modifier = Modifier.size(48.dp),
                                 tint = MaterialTheme.colorScheme.primary
                             )
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = { pickImage.launch("image/*") }) {
-                                Text("从相册选择图片")
+                            Button(onClick = {
+                                pickDocument.launch(
+                                    arrayOf(
+                                        "application/pdf",
+                                        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        "text/plain",
+                                        "image/*"
+                                    )
+                                )
+                            }) {
+                                Text(stringResource(R.string.tool_format_pick))
                             }
                         }
                     }
@@ -132,6 +181,25 @@ fun FormatConvertScreen(
             }
 
             if (sourceUri != null) {
+                sourceLabel?.let {
+                    Text(
+                        "已选择：$it",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+                if (isPdfSource) {
+                    Text(stringResource(R.string.tool_format_pdf_layout), style = MaterialTheme.typography.titleMedium)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        PdfImageLayout.entries.forEach { layout ->
+                            FilterChip(
+                                selected = layout == pdfLayout,
+                                onClick = { pdfLayout = layout },
+                                label = { Text(layout.displayName) }
+                            )
+                        }
+                    }
+                }
+
                 Text("目标格式：", style = MaterialTheme.typography.titleMedium)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(ExportFormat.JPG, ExportFormat.PNG, ExportFormat.WEBP).forEach { f ->
@@ -145,10 +213,11 @@ fun FormatConvertScreen(
 
                 Button(
                     onClick = {
-                        viewModel.convertImageFromUri(
+                        viewModel.convertDocumentFromUri(
                             uriString = sourceUri!!,
                             format = targetFormat,
-                            baseName = Time.nowDocName("converted")
+                            baseName = Time.nowDocName("converted"),
+                            pdfLayout = pdfLayout
                         )
                     },
                     enabled = !state.running,
@@ -158,29 +227,90 @@ fun FormatConvertScreen(
                         CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
                         Spacer(Modifier.size(8.dp))
                     }
-                    Text(if (state.running) "转换中..." else "开始转换")
+                    Text(if (state.running) "转换中..." else stringResource(R.string.tool_format_start))
                 }
 
-                state.lastResult?.let { result ->
-                    Card(
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-                        modifier = Modifier.fillMaxWidth()
+                if (state.lastResults.isNotEmpty()) {
+                    Text(
+                        "输出文件",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
-                            Text("已生成：${result.displayName}")
-                            Text(result.humanLocation, style = MaterialTheme.typography.bodySmall)
-                            Spacer(Modifier.height(8.dp))
-                            AssistChip(
-                                onClick = {
-                                    ShareUtils.share(context, result.shareUri, result.mimeType)
-                                },
-                                label = { Text("分享") },
-                                leadingIcon = { Icon(Icons.Outlined.IosShare, null) }
-                            )
+                        items(state.lastResults, key = { it.displayName + it.humanLocation }) { result ->
+                            Card(
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(16.dp)) {
+                                    Text(result.displayName)
+                                    Text(
+                                        result.humanLocation,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                    Spacer(Modifier.height(8.dp))
+                                    AssistChip(
+                                        onClick = {
+                                            ShareUtils.share(context, result.shareUri, result.mimeType)
+                                        },
+                                        label = { Text("分享") },
+                                        leadingIcon = { Icon(Icons.Outlined.IosShare, null) }
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+private fun isImageUri(uri: String, label: String?): Boolean {
+    val probe = (label ?: uri).lowercase()
+    return probe.endsWith(".jpg") || probe.endsWith(".jpeg") ||
+        probe.endsWith(".png") || probe.endsWith(".webp") || probe.endsWith(".gif")
+}
+
+private fun isPdfUri(uri: String?, label: String?): Boolean {
+    if (uri == null) return false
+    val probe = (label ?: uri).lowercase()
+    return probe.endsWith(".pdf") || probe.contains(".pdf")
+}
+
+@Composable
+private fun DocumentPreview(label: String?, type: InputDocumentType?) {
+    Column(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        val icon = when (type) {
+            InputDocumentType.PDF -> Icons.Outlined.PictureAsPdf
+            InputDocumentType.WORD, InputDocumentType.TXT -> Icons.Outlined.Description
+            InputDocumentType.IMAGE -> Icons.Outlined.Image
+            null -> Icons.Outlined.Description
+        }
+        Icon(
+            imageVector = icon,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.primary
+        )
+        Spacer(Modifier.height(12.dp))
+        Text(
+            type?.displayName ?: "文档",
+            style = MaterialTheme.typography.titleMedium
+        )
+        label?.let {
+            Spacer(Modifier.height(4.dp))
+            Text(
+                it,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
         }
     }
 }
