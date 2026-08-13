@@ -48,4 +48,10 @@ sealed class AppRoute(val path: String) {
 
     /** 图片格式转换 */
     data object FormatConvert : AppRoute("format")
+
+    /** 矩形裁剪 / 翻转另存为 */
+    data object ImageEdit : AppRoute("imageEdit?imageUri={imageUri}&mode={mode}") {
+        fun create(imageUri: String, mode: String) =
+            "imageEdit?imageUri=${java.net.URLEncoder.encode(imageUri, "UTF-8")}&mode=$mode"
+    }
 }

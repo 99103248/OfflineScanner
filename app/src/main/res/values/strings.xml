@@ -30,6 +30,17 @@
     <string name="tool_format_start">开始转换</string>
     <string name="tool_scan">拍照扫描</string>
     <string name="tool_scan_desc">拍照并自动矫正</string>
+    <string name="tool_crop">裁剪图片</string>
+    <string name="tool_crop_desc">矩形裁剪后另存为</string>
+    <string name="tool_flip">翻转另存为</string>
+    <string name="tool_flip_desc">水平 / 垂直翻转或旋转</string>
+    <string name="action_apply_crop">应用裁剪</string>
+    <string name="action_flip_h">水平翻转</string>
+    <string name="action_flip_v">垂直翻转</string>
+    <string name="action_rotate_90">旋转 90°</string>
+    <string name="action_reset">还原</string>
+    <string name="action_save_as">另存为</string>
+    <string name="saving_image">正在保存...</string>
 
     <!-- 通用 -->
     <string name="action_done">完成</string>

@@ -11,6 +11,8 @@ import com.scanner.offline.ui.screen.camera.CameraScreen
 import com.scanner.offline.ui.screen.crop.CropScreen
 import com.scanner.offline.ui.screen.document.DocumentDetailScreen
 import com.scanner.offline.ui.screen.export.ExportScreen
+import com.scanner.offline.ui.screen.edit.ImageEditMode
+import com.scanner.offline.ui.screen.edit.ImageEditScreen
 import com.scanner.offline.ui.screen.export.FormatConvertScreen
 import com.scanner.offline.ui.screen.filter.FilterScreen
 import com.scanner.offline.ui.screen.home.HomeScreen
@@ -42,7 +44,10 @@ fun AppNavGraph(
                 onPickImageForOcr = { uri ->
                     navController.navigate(AppRoute.Crop.create(uri))
                 },
-                onFormatConvertClick = { navController.navigate(AppRoute.FormatConvert.path) }
+                onFormatConvertClick = { navController.navigate(AppRoute.FormatConvert.path) },
+                onPickImageForEdit = { uri, mode ->
+                    navController.navigate(AppRoute.ImageEdit.create(uri, mode))
+                }
             )
         }
         composable(TopRoute.Me.path) {
@@ -141,6 +146,28 @@ fun AppNavGraph(
 
         composable(AppRoute.FormatConvert.path) {
             FormatConvertScreen(onBack = { navController.popBackStack() })
+        }
+
+        composable(
+            route = AppRoute.ImageEdit.path,
+            arguments = listOf(
+                navArgument("imageUri") { type = NavType.StringType; defaultValue = "" },
+                navArgument("mode") { type = NavType.StringType; defaultValue = "crop" }
+            )
+        ) { backStackEntry ->
+            val raw = backStackEntry.arguments?.getString("imageUri").orEmpty()
+            val uri = java.net.URLDecoder.decode(raw, "UTF-8")
+            val modeArg = backStackEntry.arguments?.getString("mode").orEmpty()
+            val mode = if (modeArg.equals("flip", ignoreCase = true)) {
+                ImageEditMode.FLIP
+            } else {
+                ImageEditMode.CROP
+            }
+            ImageEditScreen(
+                imageUri = uri,
+                mode = mode,
+                onBack = { navController.popBackStack() }
+            )
         }
     }
 }

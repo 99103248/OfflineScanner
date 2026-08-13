@@ -19,11 +19,17 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.CameraAlt
+import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.Description
+import androidx.compose.material.icons.outlined.Flip
 import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -46,17 +52,38 @@ import com.scanner.offline.R
 fun ToolsScreen(
     onScanClick: () -> Unit,
     onPickImageForOcr: (String) -> Unit,
-    onFormatConvertClick: () -> Unit
+    onFormatConvertClick: () -> Unit,
+    onPickImageForEdit: (String, String) -> Unit
 ) {
+    var pendingEditMode by remember { mutableStateOf<String?>(null) }
+
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.toString()?.let(onPickImageForOcr)
+        if (uri == null) {
+            pendingEditMode = null
+            return@rememberLauncherForActivityResult
+        }
+        val editMode = pendingEditMode
+        pendingEditMode = null
+        if (editMode != null) {
+            onPickImageForEdit(uri.toString(), editMode)
+        } else {
+            onPickImageForOcr(uri.toString())
+        }
     }
 
     val tools = listOf(
         Tool(Icons.Outlined.CameraAlt, R.string.tool_scan, R.string.tool_scan_desc, onScanClick),
         Tool(Icons.Outlined.TextFields, R.string.tool_ocr, R.string.tool_ocr_desc) { pickImage.launch("image/*") },
+        Tool(Icons.Outlined.Crop, R.string.tool_crop, R.string.tool_crop_desc) {
+            pendingEditMode = "crop"
+            pickImage.launch("image/*")
+        },
+        Tool(Icons.Outlined.Flip, R.string.tool_flip, R.string.tool_flip_desc) {
+            pendingEditMode = "flip"
+            pickImage.launch("image/*")
+        },
         Tool(Icons.Outlined.PictureAsPdf, R.string.tool_to_pdf, R.string.tool_to_pdf_desc) { pickImage.launch("image/*") },
         Tool(Icons.Outlined.Description, R.string.tool_to_word, R.string.tool_to_word_desc) { pickImage.launch("image/*") },
         Tool(Icons.Outlined.GridOn, R.string.tool_to_excel, R.string.tool_to_excel_desc) { pickImage.launch("image/*") },

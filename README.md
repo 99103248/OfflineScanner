@@ -29,6 +29,8 @@
 - 📚 多页文档管理（Room 本地数据库）
 - 📤 导出为 **PDF / Word(.docx) / Excel(.xlsx) / TXT**
 - 🖼️ 格式转换：图片互转（JPG / PNG / WebP）；**文档转图片**（PDF / Word / TXT → JPG / PNG / WebP；多页 PDF 支持「多张图片」或「一张长图」）
+- ✂️ **矩形裁剪**：从相册选图，拖拽四角裁剪后另存为 JPG / PNG / WebP
+- 🔄 **翻转另存为**：水平翻转 / 垂直翻转 / 顺时针旋转 90°，再导出图片
 - 📁 **自定义导出目录**：通过 SAF（Storage Access Framework）选择任意位置（Download、文件管理器自建文件夹等）
 - 🔗 系统分享面板分享文件
 - 🌗 Material Design 3 UI（自适应深色模式 + Material You 动态取色）
@@ -84,7 +86,8 @@ app/src/main/
 │  │     ├─ tools/        工具箱
 │  │     ├─ me/           我的 / 设置（导出目录配置）
 │  │     ├─ camera/       拍照
-│  │     ├─ crop/         边缘 + 裁剪
+│  │     ├─ crop/         边缘 + 透视裁剪
+│  │     ├─ edit/         矩形裁剪 / 翻转另存为
 │  │     ├─ filter/       滤镜
 │  │     ├─ ocr/          OCR 识别
 │  │     ├─ document/     文档详情
@@ -102,7 +105,7 @@ app/src/main/
 │  │
 │  ├─ engine/                              核心引擎（可独立替换）
 │  │  ├─ ocr/             OcrEngine 抽象 + ML Kit + RapidOCR + 路由工厂
-│  │  ├─ image/           边缘检测 / 透视矫正 / 滤镜（OpenCV）
+│  │  ├─ image/           边缘检测 / 透视矫正 / 滤镜 / 矩形裁剪翻转
 │  │  └─ export/          PDF / OOXML / 图片格式
 │  │
 │  ├─ di/                                  Hilt Modules
