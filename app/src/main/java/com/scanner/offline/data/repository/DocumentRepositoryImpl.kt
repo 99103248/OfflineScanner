@@ -27,6 +27,9 @@ class DocumentRepositoryImpl @Inject constructor(
         return pair.first.toDomain(pair.second.map { it.toDomain() })
     }
 
+    override suspend fun getPage(pageId: Long): Page? =
+        dao.getPage(pageId)?.toDomain()
+
     override suspend fun create(name: String): Long {
         val now = System.currentTimeMillis()
         return dao.insertDocument(
@@ -58,6 +61,10 @@ class DocumentRepositoryImpl @Inject constructor(
 
     override suspend fun updatePageOcr(pageId: Long, text: String, langCode: String) {
         dao.updatePageOcr(pageId, text, langCode)
+    }
+
+    override suspend fun updatePageImage(pageId: Long, processedPath: String, thumbnailPath: String) {
+        dao.updatePageImage(pageId, processedPath, thumbnailPath)
     }
 
     override suspend fun deletePage(pageId: Long) {

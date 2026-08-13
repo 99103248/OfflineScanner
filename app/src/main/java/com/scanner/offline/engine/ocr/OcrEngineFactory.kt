@@ -24,7 +24,7 @@ class OcrEngineFactory @Inject constructor(
     fun engineFor(language: Language): OcrEngine = when (language) {
         Language.CHINESE -> if (paddle.isEnabled) paddle else mlKit
         Language.ENGLISH, Language.LATIN -> mlKit
-        Language.JAPANESE, Language.KOREAN -> mlKit  // 后续可替换为对应模型
+        Language.JAPANESE, Language.KOREAN -> mlKit
         Language.AUTO -> mlKit
     }
 

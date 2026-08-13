@@ -5,6 +5,8 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.TextRecognizer
 import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
+import com.google.mlkit.vision.text.japanese.JapaneseTextRecognizerOptions
+import com.google.mlkit.vision.text.korean.KoreanTextRecognizerOptions
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.scanner.offline.domain.model.BoundingBox
 import com.scanner.offline.domain.model.Language
@@ -40,7 +42,9 @@ class MlKitOcrEngine @Inject constructor() : OcrEngine {
         Language.AUTO,
         Language.ENGLISH,
         Language.CHINESE,
-        Language.LATIN
+        Language.LATIN,
+        Language.JAPANESE,
+        Language.KOREAN
     )
 
     private val latinRecognizer: TextRecognizer by lazy {
@@ -51,9 +55,19 @@ class MlKitOcrEngine @Inject constructor() : OcrEngine {
         TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build())
     }
 
+    private val japaneseRecognizer: TextRecognizer by lazy {
+        TextRecognition.getClient(JapaneseTextRecognizerOptions.Builder().build())
+    }
+
+    private val koreanRecognizer: TextRecognizer by lazy {
+        TextRecognition.getClient(KoreanTextRecognizerOptions.Builder().build())
+    }
+
     override suspend fun recognize(bitmap: Bitmap, language: Language): OcrResult {
         val recognizer = when (language) {
             Language.CHINESE -> chineseRecognizer
+            Language.JAPANESE -> japaneseRecognizer
+            Language.KOREAN -> koreanRecognizer
             Language.ENGLISH, Language.LATIN -> latinRecognizer
             else -> latinRecognizer
         }

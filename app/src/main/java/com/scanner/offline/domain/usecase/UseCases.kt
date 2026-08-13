@@ -16,9 +16,12 @@ import com.scanner.offline.domain.model.TableData
 import com.scanner.offline.domain.repository.DocumentRepository
 import com.scanner.offline.engine.export.DocumentExporter
 import com.scanner.offline.engine.export.FileToImageConverter
+import com.scanner.offline.engine.image.EdgeDetector
 import com.scanner.offline.engine.image.ImageFilter
 import com.scanner.offline.engine.image.PerspectiveCorrector
 import com.scanner.offline.engine.ocr.OcrEngineFactory
+import com.scanner.offline.util.BitmapUtils
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -241,7 +244,8 @@ class SaveEditedImageUseCase @Inject constructor(
     suspend operator fun invoke(
         bitmap: Bitmap,
         format: ExportFormat,
-        baseName: String = "edited"
+        baseName: String = "edited",
+        quality: Int = 92
     ): ExportResult = withContext(Dispatchers.IO) {
         require(format == ExportFormat.JPG || format == ExportFormat.PNG || format == ExportFormat.WEBP) {
             "另存为仅支持 JPG / PNG / WebP"
@@ -251,7 +255,7 @@ class SaveEditedImageUseCase @Inject constructor(
             extension = format.extension,
             mimeType = format.mimeType
         )
-        sink.openOutputStream().use { os -> converter.writeBitmap(bitmap, format, os) }
+        sink.openOutputStream().use { os -> converter.writeBitmap(bitmap, format, os, quality) }
         ExportResult(
             displayName = sink.displayName,
             humanLocation = sink.humanLocation,
@@ -259,5 +263,58 @@ class SaveEditedImageUseCase @Inject constructor(
             outputFile = sink.outputFile,
             mimeType = format.mimeType
         )
+    }
+}
+
+class UpdatePageImageUseCase @Inject constructor(
+    private val repo: DocumentRepository,
+    private val storage: StorageManager
+) {
+    suspend operator fun invoke(pageId: Long, bitmap: Bitmap): Unit = withContext(Dispatchers.IO) {
+        val page = repo.getPage(pageId) ?: error("页面不存在")
+        storage.saveBitmap(bitmap, File(page.processedPath))
+        val thumbH = (bitmap.height * 320f / bitmap.width).toInt().coerceAtLeast(1)
+        val thumb = Bitmap.createScaledBitmap(bitmap, 320, thumbH, true)
+        storage.saveBitmap(thumb, File(page.thumbnailPath), quality = 70)
+        if (thumb !== bitmap) thumb.recycle()
+        repo.updatePageImage(pageId, page.processedPath, page.thumbnailPath)
+    }
+}
+
+class SaveBurstPagesUseCase @Inject constructor(
+    private val savePage: SaveScannedPageUseCase,
+    private val edgeDetector: EdgeDetector,
+    private val corrector: PerspectiveCorrector,
+    private val storage: StorageManager,
+    @ApplicationContext private val context: android.content.Context
+) {
+    suspend operator fun invoke(imageUris: List<String>, documentName: String): Long =
+        withContext(Dispatchers.IO) {
+            require(imageUris.isNotEmpty()) { "没有拍摄的页面" }
+            var docId: Long? = null
+            imageUris.forEach { uriString ->
+                val bmp = decode(uriString) ?: return@forEach
+                val corners = edgeDetector.detect(bmp)
+                val corrected = corrector.correct(bmp, corners)
+                val clamped = corrector.clamp(corrected, 2400)
+                val tmp = storage.newCacheImage("burst")
+                storage.saveBitmap(clamped, tmp)
+                docId = savePage(
+                    processedBitmapPath = tmp.absolutePath,
+                    filterMode = FilterMode.ORIGINAL,
+                    docId = docId,
+                    documentName = documentName
+                )
+            }
+            docId ?: error("连拍保存失败")
+        }
+
+    private fun decode(imageUri: String): Bitmap? {
+        val uri = android.net.Uri.parse(imageUri)
+        return if (uri.scheme == "file" || uri.scheme == null) {
+            BitmapUtils.decode(File(uri.path ?: imageUri))
+        } else {
+            BitmapUtils.decode(context.contentResolver, uri)
+        }
     }
 }

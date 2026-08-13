@@ -53,7 +53,11 @@ fun ToolsScreen(
     onScanClick: () -> Unit,
     onPickImageForOcr: (String) -> Unit,
     onFormatConvertClick: () -> Unit,
-    onPickImageForEdit: (String, String) -> Unit
+    onPickImageForEdit: (String, String) -> Unit,
+    onBatchClick: () -> Unit,
+    onStitchClick: () -> Unit,
+    onPdfToolsClick: () -> Unit,
+    onBarcodeClick: () -> Unit
 ) {
     var pendingEditMode by remember { mutableStateOf<String?>(null) }
 
@@ -87,7 +91,11 @@ fun ToolsScreen(
         Tool(Icons.Outlined.PictureAsPdf, R.string.tool_to_pdf, R.string.tool_to_pdf_desc) { pickImage.launch("image/*") },
         Tool(Icons.Outlined.Description, R.string.tool_to_word, R.string.tool_to_word_desc) { pickImage.launch("image/*") },
         Tool(Icons.Outlined.GridOn, R.string.tool_to_excel, R.string.tool_to_excel_desc) { pickImage.launch("image/*") },
-        Tool(Icons.Outlined.Image, R.string.tool_format, R.string.tool_format_desc, onFormatConvertClick)
+        Tool(Icons.Outlined.Image, R.string.tool_format, R.string.tool_format_desc, onFormatConvertClick),
+        Tool(Icons.Outlined.GridOn, R.string.tool_batch, R.string.tool_batch_desc, onBatchClick),
+        Tool(Icons.Outlined.Image, R.string.tool_stitch, R.string.tool_stitch_desc, onStitchClick),
+        Tool(Icons.Outlined.PictureAsPdf, R.string.tool_pdf, R.string.tool_pdf_desc, onPdfToolsClick),
+        Tool(Icons.Outlined.TextFields, R.string.tool_barcode, R.string.tool_barcode_desc, onBarcodeClick)
     )
 
     Scaffold(

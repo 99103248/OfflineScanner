@@ -50,11 +50,11 @@ import kotlinx.coroutines.launch
 fun OcrScreen(
     imagePath: String,
     docId: Long?,
+    pageId: Long?,
     onBack: () -> Unit,
     viewModel: OcrViewModel = hiltViewModel()
 ) {
-    val pageIdLong = remember(docId) { null } // 当前简化：从外部不传 pageId；详情页打开时会改造
-    LaunchedEffect(imagePath) { viewModel.load(imagePath, pageIdLong) }
+    LaunchedEffect(imagePath, pageId) { viewModel.load(imagePath, pageId) }
 
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -84,7 +84,7 @@ fun OcrScreen(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text("识别语言：", style = MaterialTheme.typography.labelLarge)
-                listOf(Language.AUTO, Language.CHINESE, Language.ENGLISH).forEach { l ->
+                listOf(Language.AUTO, Language.CHINESE, Language.ENGLISH, Language.JAPANESE, Language.KOREAN).forEach { l ->
                     FilterChip(
                         selected = l == state.language,
                         onClick = { viewModel.run(l) },
@@ -113,18 +113,15 @@ fun OcrScreen(
                         color = MaterialTheme.colorScheme.error
                     )
                     state.result != null -> {
-                        val text = state.result?.text.orEmpty()
                         val scroll = rememberScrollState()
-                        Column(
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = state.editedText,
+                            onValueChange = viewModel::updateEdited,
+                            textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
                             modifier = Modifier
                                 .fillMaxSize()
                                 .verticalScroll(scroll)
-                        ) {
-                            Text(
-                                text = text.ifBlank { "（未识别到文字）" },
-                                style = MaterialTheme.typography.bodyLarge
-                            )
-                        }
+                        )
                     }
                     else -> Text("准备识别...")
                 }
@@ -132,7 +129,7 @@ fun OcrScreen(
 
             Spacer(Modifier.height(8.dp))
 
-            val text = state.result?.text.orEmpty()
+            val text = state.editedText
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -148,13 +145,23 @@ fun OcrScreen(
                     label = { Text(stringResource(R.string.ocr_copy)) },
                     leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }
                 )
-                state.result?.let { r ->
-                    Text(
-                        text = "用时 ${r.processingTimeMs} ms · ${r.language.displayName}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                    )
-                }
+                AssistChip(
+                    onClick = {
+                        viewModel.saveEdits {
+                            scope.launch { snackbarHostState.showSnackbar("已保存校对") }
+                        }
+                    },
+                    label = { Text("保存校对") }
+                )
+                AssistChip(
+                    onClick = {
+                        viewModel.exportExcel(
+                            onDone = { scope.launch { snackbarHostState.showSnackbar("已导出 $it") } },
+                            onError = { scope.launch { snackbarHostState.showSnackbar(it) } }
+                        )
+                    },
+                    label = { Text("导出表格") }
+                )
             }
         }
     }

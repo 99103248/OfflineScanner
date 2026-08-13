@@ -57,4 +57,14 @@ class NormalizedCropRectTest {
         assertTrue(px.width >= 1)
         assertTrue(px.height >= 1)
     }
+
+    @Test
+    fun `A4 比例锁定后宽高比接近 210比297`() {
+        val imageAspect = 1f
+        val rect = NormalizedCropRect.centered(com.scanner.offline.domain.model.CropAspect.A4, imageAspect)
+        val pixelRatio = (rect.width / rect.height) * imageAspect
+        val expected = 210f / 297f
+        val err = kotlin.math.abs(pixelRatio - expected) / expected
+        assertTrue(err < 0.12f)
+    }
 }

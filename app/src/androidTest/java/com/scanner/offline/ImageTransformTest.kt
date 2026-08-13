@@ -46,6 +46,14 @@ class ImageTransformTest {
     }
 
     @Test
+    fun rotate90ccw_then_cw_restores() {
+        val src = unique2x2()
+        val ccw = transform.rotate90CounterClockwise(src)
+        val back = transform.rotate90Clockwise(ccw)
+        assertPixelsEqual(src, back)
+    }
+
+    @Test
     fun crop_center_half_has_expected_size_and_color() {
         val src = unique2x2()
         val cropped = transform.crop(src, NormalizedCropRect(0.5f, 0f, 1f, 0.5f))

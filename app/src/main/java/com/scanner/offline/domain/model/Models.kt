@@ -59,6 +59,29 @@ data class BoundingBox(
     val height: Int get() = bottom - top
 }
 
+/** 矩形裁剪比例（像素宽/高） */
+enum class CropAspect(val displayName: String, val widthOverHeight: Float?) {
+    FREE("自由", null),
+    SQUARE("1:1", 1f),
+    R43("4:3", 4f / 3f),
+    R169("16:9", 16f / 9f),
+    A4("A4", 210f / 297f)
+}
+
+enum class WatermarkPosition(val displayName: String) {
+    TOP_LEFT("左上"),
+    TOP_RIGHT("右上"),
+    BOTTOM_LEFT("左下"),
+    BOTTOM_RIGHT("右下"),
+    CENTER("居中")
+}
+
+enum class StitchMode(val displayName: String) {
+    VERTICAL("纵向"),
+    HORIZONTAL("横向"),
+    GRID("网格")
+}
+
 /** 滤镜模式 */
 enum class FilterMode(val displayName: String) {
     ORIGINAL("原图"),

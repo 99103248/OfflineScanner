@@ -40,7 +40,14 @@
     <string name="action_rotate_90">旋转 90°</string>
     <string name="action_reset">还原</string>
     <string name="action_save_as">另存为</string>
-    <string name="saving_image">正在保存...</string>
+    <string name="tool_batch">批量处理</string>
+    <string name="tool_batch_desc">多图翻转 / 旋转 / 压缩导出</string>
+    <string name="tool_stitch">图片拼接</string>
+    <string name="tool_stitch_desc">纵 / 横 / 网格拼成长图</string>
+    <string name="tool_pdf">PDF 工具</string>
+    <string name="tool_pdf_desc">合并、拆页、抽页</string>
+    <string name="tool_barcode">扫码识别</string>
+    <string name="tool_barcode_desc">二维码与条码，完全离线</string>
 
     <!-- 通用 -->
     <string name="action_done">完成</string>

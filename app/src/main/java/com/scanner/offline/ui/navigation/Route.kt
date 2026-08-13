@@ -31,9 +31,9 @@ sealed class AppRoute(val path: String) {
     }
 
     /** OCR 识别 */
-    data object Ocr : AppRoute("ocr?imagePath={imagePath}&docId={docId}") {
-        fun create(imagePath: String, docId: Long? = null) =
-            "ocr?imagePath=${java.net.URLEncoder.encode(imagePath, "UTF-8")}&docId=${docId ?: -1}"
+    data object Ocr : AppRoute("ocr?imagePath={imagePath}&docId={docId}&pageId={pageId}") {
+        fun create(imagePath: String, docId: Long? = null, pageId: Long? = null) =
+            "ocr?imagePath=${java.net.URLEncoder.encode(imagePath, "UTF-8")}&docId=${docId ?: -1}&pageId=${pageId ?: -1}"
     }
 
     /** 文档详情 */
@@ -50,8 +50,14 @@ sealed class AppRoute(val path: String) {
     data object FormatConvert : AppRoute("format")
 
     /** 矩形裁剪 / 翻转另存为 */
-    data object ImageEdit : AppRoute("imageEdit?imageUri={imageUri}&mode={mode}") {
-        fun create(imageUri: String, mode: String) =
-            "imageEdit?imageUri=${java.net.URLEncoder.encode(imageUri, "UTF-8")}&mode=$mode"
+    data object ImageEdit : AppRoute("imageEdit?imageUri={imageUri}&mode={mode}&pageId={pageId}") {
+        fun create(imageUri: String, mode: String, pageId: Long? = null) =
+            "imageEdit?imageUri=${java.net.URLEncoder.encode(imageUri, "UTF-8")}&mode=$mode&pageId=${pageId ?: -1}"
     }
+
+    data object Burst : AppRoute("burst")
+    data object Batch : AppRoute("batch")
+    data object Stitch : AppRoute("stitch")
+    data object PdfTools : AppRoute("pdfTools")
+    data object Barcode : AppRoute("barcode")
 }

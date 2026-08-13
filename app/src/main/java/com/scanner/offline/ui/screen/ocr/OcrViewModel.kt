@@ -23,14 +23,15 @@ import javax.inject.Inject
 class OcrViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val recognize: RecognizeTextUseCase,
-    private val storage: StorageManager
+    private val storage: StorageManager,
+    private val repo: com.scanner.offline.domain.repository.DocumentRepository,
+    private val exporter: com.scanner.offline.engine.export.DocumentExporter
 ) : ViewModel() {
-
-    private val _state = MutableStateFlow(OcrUiState())
-    val state: StateFlow<OcrUiState> = _state.asStateFlow()
 
     private var imagePath: String = ""
     private var pageId: Long? = null
+    private val _state = MutableStateFlow(OcrUiState())
+    val state: StateFlow<OcrUiState> = _state.asStateFlow()
 
     /**
      * 输入可能是 file:// 形式的 cache uri、内容 uri，或文件绝对路径。
@@ -58,7 +59,8 @@ class OcrViewModel @Inject constructor(
                 .onSuccess { res ->
                     _state.value = _state.value.copy(
                         running = false,
-                        result = res
+                        result = res,
+                        editedText = res.text
                     )
                 }
                 .onFailure { e ->
@@ -67,6 +69,36 @@ class OcrViewModel @Inject constructor(
                         error = e.message ?: "识别失败"
                     )
                 }
+        }
+    }
+
+    fun updateEdited(text: String) {
+        _state.value = _state.value.copy(editedText = text)
+    }
+
+    fun saveEdits(onDone: () -> Unit) {
+        val text = _state.value.editedText
+        val pid = pageId ?: return onDone()
+        viewModelScope.launch {
+            repo.updatePageOcr(pid, text, _state.value.language.code)
+            onDone()
+        }
+    }
+
+    fun exportExcel(onDone: (String) -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    val table = com.scanner.offline.engine.ocr.TableParser.fromPlainText(_state.value.editedText)
+                    val sink = storage.createExportSink(
+                        com.scanner.offline.util.Time.nowDocName("table"),
+                        "xlsx",
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
+                    sink.openOutputStream().use { exporter.tableToExcel(listOf(table), it) }
+                    sink.displayName
+                }
+            }.onSuccess(onDone).onFailure { onError(it.message ?: "导出失败") }
         }
     }
 
@@ -87,5 +119,6 @@ data class OcrUiState(
     val running: Boolean = false,
     val language: Language = Language.AUTO,
     val result: OcrResult? = null,
+    val editedText: String = "",
     val error: String? = null
 )

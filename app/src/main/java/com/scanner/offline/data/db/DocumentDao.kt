@@ -39,8 +39,14 @@ interface DocumentDao {
     @Query("SELECT * FROM pages WHERE docId = :docId ORDER BY `index` ASC")
     suspend fun getPagesByDoc(docId: Long): List<PageEntity>
 
+    @Query("SELECT * FROM pages WHERE id = :id LIMIT 1")
+    suspend fun getPage(id: Long): PageEntity?
+
     @Query("UPDATE pages SET ocrText = :text, ocrLanguage = :lang WHERE id = :pageId")
     suspend fun updatePageOcr(pageId: Long, text: String, lang: String)
+
+    @Query("UPDATE pages SET processedPath = :processed, thumbnailPath = :thumb WHERE id = :pageId")
+    suspend fun updatePageImage(pageId: Long, processed: String, thumb: String)
 
     @Query("DELETE FROM pages WHERE id = :pageId")
     suspend fun deletePage(pageId: Long)

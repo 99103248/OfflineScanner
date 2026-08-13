@@ -67,6 +67,7 @@ import java.util.concurrent.Executor
 @Composable
 fun CameraScreen(
     onCaptured: (String) -> Unit,
+    onBurstDone: (List<String>) -> Unit = {},
     onBack: () -> Unit
 ) {
     val context = LocalContext.current
@@ -85,20 +86,33 @@ fun CameraScreen(
     }
 
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var burstMode by remember { mutableStateOf(false) }
+    var burstUris by remember { mutableStateOf<List<String>>(emptyList()) }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.action_take_photo)) },
+                title = { Text(if (burstMode) "连拍 ${burstUris.size}" else stringResource(R.string.action_take_photo)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Outlined.Close, contentDescription = null)
                     }
                 },
+                actions = {
+                    androidx.compose.material3.TextButton(onClick = { burstMode = !burstMode }) {
+                        Text(if (burstMode) "单拍" else "连拍", color = Color.White)
+                    }
+                    if (burstMode && burstUris.isNotEmpty()) {
+                        androidx.compose.material3.TextButton(onClick = { onBurstDone(burstUris) }) {
+                            Text("完成", color = Color.White)
+                        }
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = Color.Black.copy(alpha = 0.6f),
                     titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
+                    navigationIconContentColor = Color.White,
+                    actionIconContentColor = Color.White
                 )
             )
         },
@@ -163,7 +177,9 @@ fun CameraScreen(
                         executor,
                         object : ImageCapture.OnImageSavedCallback {
                             override fun onImageSaved(out: ImageCapture.OutputFileResults) {
-                                onCaptured(Uri.fromFile(outFile).toString())
+                                val uri = Uri.fromFile(outFile).toString()
+                                if (burstMode) burstUris = burstUris + uri
+                                else onCaptured(uri)
                             }
 
                             override fun onError(exception: ImageCaptureException) {

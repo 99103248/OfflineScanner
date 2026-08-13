@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
@@ -21,7 +22,14 @@ import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.Flip
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.material.icons.outlined.Rotate90DegreesCcw
 import androidx.compose.material.icons.outlined.Rotate90DegreesCw
+import androidx.compose.material3.Slider
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.TextStyle
+import com.scanner.offline.domain.model.CropAspect
+import com.scanner.offline.domain.model.WatermarkPosition
 import androidx.compose.material.icons.outlined.Save
 import androidx.compose.material.icons.outlined.SwapVert
 import androidx.compose.material3.AssistChip
@@ -76,10 +84,12 @@ import kotlinx.coroutines.launch
 fun ImageEditScreen(
     imageUri: String,
     mode: ImageEditMode,
+    pageId: Long? = null,
     onBack: () -> Unit,
     viewModel: ImageEditViewModel = hiltViewModel()
 ) {
     LaunchedEffect(mode) { viewModel.setMode(mode) }
+    LaunchedEffect(pageId) { viewModel.bindPage(pageId) }
     LaunchedEffect(imageUri) { viewModel.load(imageUri) }
 
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -151,7 +161,10 @@ fun ImageEditScreen(
                         bitmap = state.working!!,
                         cropRect = state.cropRect,
                         showOverlay = state.mode == ImageEditMode.CROP,
-                        onCropChanged = viewModel::updateCrop
+                        strokes = state.strokes,
+                        drawMode = state.mode == ImageEditMode.MARK,
+                        onCornerMoved = viewModel::moveCropCorner,
+                        onStroke = viewModel::addStrokePoint
                     )
                     else -> Text(
                         stringResource(R.string.error_no_image),
@@ -162,16 +175,23 @@ fun ImageEditScreen(
             }
 
             EditToolbar(
-                mode = state.mode,
-                format = state.format,
+                state = state,
                 saving = state.saving,
-                lastResult = state.lastResult?.let { it.shareUri to it.mimeType },
                 onMode = viewModel::setMode,
                 onApplyCrop = viewModel::applyCrop,
+                onCropAspect = viewModel::setCropAspect,
                 onFlipH = viewModel::flipHorizontal,
                 onFlipV = viewModel::flipVertical,
                 onRotate = viewModel::rotate90,
+                onRotateCcw = viewModel::rotate90Ccw,
+                onFreeAngle = viewModel::setFreeAngle,
+                onApplyAngle = viewModel::applyFreeAngle,
                 onFormat = viewModel::setFormat,
+                onQuality = viewModel::setQuality,
+                onWatermark = viewModel::setWatermark,
+                onWatermarkPos = viewModel::setWatermarkPos,
+                onApplyWatermark = viewModel::applyWatermark,
+                onApplyStrokes = viewModel::applyStrokes,
                 onShare = { uri, mime -> ShareUtils.share(context, uri, mime) }
             )
         }
@@ -181,18 +201,27 @@ fun ImageEditScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EditToolbar(
-    mode: ImageEditMode,
-    format: ExportFormat,
+    state: ImageEditUiState,
     saving: Boolean,
-    lastResult: Pair<android.net.Uri, String>?,
     onMode: (ImageEditMode) -> Unit,
     onApplyCrop: () -> Unit,
+    onCropAspect: (CropAspect) -> Unit,
     onFlipH: () -> Unit,
     onFlipV: () -> Unit,
     onRotate: () -> Unit,
+    onRotateCcw: () -> Unit,
+    onFreeAngle: (Float) -> Unit,
+    onApplyAngle: () -> Unit,
     onFormat: (ExportFormat) -> Unit,
+    onQuality: (Int) -> Unit,
+    onWatermark: (String) -> Unit,
+    onWatermarkPos: (WatermarkPosition) -> Unit,
+    onApplyWatermark: () -> Unit,
+    onApplyStrokes: () -> Unit,
     onShare: (android.net.Uri, String) -> Unit
 ) {
+    val mode = state.mode
+    val format = state.format
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -201,63 +230,106 @@ private fun EditToolbar(
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = mode == ImageEditMode.CROP,
-                onClick = { onMode(ImageEditMode.CROP) },
-                label = { Text(stringResource(R.string.tool_crop)) },
-                leadingIcon = { Icon(Icons.Outlined.Crop, null, modifier = Modifier.size(18.dp)) }
-            )
-            FilterChip(
-                selected = mode == ImageEditMode.FLIP,
-                onClick = { onMode(ImageEditMode.FLIP) },
-                label = { Text(stringResource(R.string.tool_flip)) },
-                leadingIcon = { Icon(Icons.Outlined.Flip, null, modifier = Modifier.size(18.dp)) }
-            )
+            FilterChip(selected = mode == ImageEditMode.CROP, onClick = { onMode(ImageEditMode.CROP) }, label = { Text("裁剪") })
+            FilterChip(selected = mode == ImageEditMode.FLIP, onClick = { onMode(ImageEditMode.FLIP) }, label = { Text("翻转") })
+            FilterChip(selected = mode == ImageEditMode.MARK, onClick = { onMode(ImageEditMode.MARK) }, label = { Text("批注") })
         }
-
         val scroll = rememberScrollState()
         Row(
             modifier = Modifier.horizontalScroll(scroll),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (mode == ImageEditMode.CROP) {
-                TextButton(onClick = onApplyCrop, enabled = !saving) {
-                    Text(stringResource(R.string.action_apply_crop), color = Color.White)
+            when (mode) {
+                ImageEditMode.CROP -> {
+                    CropAspect.entries.forEach { a ->
+                        FilterChip(selected = state.cropAspect == a, onClick = { onCropAspect(a) }, label = { Text(a.displayName) })
+                    }
+                    TextButton(onClick = onApplyCrop, enabled = !saving) {
+                        Text("应用裁剪", color = Color.White)
+                    }
                 }
-            } else {
-                IconButton(onClick = onFlipH, enabled = !saving) {
-                    Icon(Icons.Outlined.Flip, stringResource(R.string.action_flip_h), tint = Color.White)
+                ImageEditMode.FLIP -> {
+                    IconButton(onClick = onFlipH, enabled = !saving) {
+                        Icon(Icons.Outlined.Flip, "水平翻转", tint = Color.White)
+                    }
+                    IconButton(onClick = onFlipV, enabled = !saving) {
+                        Icon(Icons.Outlined.SwapVert, "垂直翻转", tint = Color.White)
+                    }
+                    IconButton(onClick = onRotate, enabled = !saving) {
+                        Icon(Icons.Outlined.Rotate90DegreesCw, "顺时针", tint = Color.White)
+                    }
+                    IconButton(onClick = onRotateCcw, enabled = !saving) {
+                        Icon(Icons.Outlined.Rotate90DegreesCcw, "逆时针", tint = Color.White)
+                    }
                 }
-                IconButton(onClick = onFlipV, enabled = !saving) {
-                    Icon(Icons.Outlined.SwapVert, stringResource(R.string.action_flip_v), tint = Color.White)
-                }
-                IconButton(onClick = onRotate, enabled = !saving) {
-                    Icon(Icons.Outlined.Rotate90DegreesCw, stringResource(R.string.action_rotate_90), tint = Color.White)
+                ImageEditMode.MARK -> {
+                    TextButton(onClick = onApplyStrokes, enabled = !saving) {
+                        Text("应用批注", color = Color.White)
+                    }
+                    TextButton(onClick = onApplyWatermark, enabled = !saving && state.watermark.isNotBlank()) {
+                        Text("加水印", color = Color.White)
+                    }
                 }
             }
             Spacer(Modifier.size(8.dp))
-            Text(stringResource(R.string.action_save_as), color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelLarge)
+            Text("另存为", color = Color.White.copy(alpha = 0.8f), style = MaterialTheme.typography.labelLarge)
             listOf(ExportFormat.JPG, ExportFormat.PNG, ExportFormat.WEBP).forEach { f ->
-                FilterChip(
-                    selected = format == f,
-                    onClick = { onFormat(f) },
-                    label = { Text(f.extension.uppercase()) },
-                    enabled = !saving
-                )
+                FilterChip(selected = format == f, onClick = { onFormat(f) }, label = { Text(f.extension.uppercase()) }, enabled = !saving)
             }
         }
-
+        if (mode == ImageEditMode.FLIP) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("角度 ${state.freeAngle.toInt()}°", color = Color.White, modifier = Modifier.width(88.dp))
+                Slider(
+                    value = state.freeAngle,
+                    onValueChange = onFreeAngle,
+                    valueRange = -45f..45f,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onApplyAngle) { Text("旋转", color = Color.White) }
+            }
+        }
+        if (mode == ImageEditMode.MARK) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BasicTextField(
+                    value = state.watermark,
+                    onValueChange = onWatermark,
+                    textStyle = TextStyle(color = Color.White),
+                    cursorBrush = SolidColor(Color.White),
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(8.dp),
+                    decorationBox = { inner ->
+                        Box {
+                            if (state.watermark.isEmpty()) Text("水印文字", color = Color.White.copy(0.5f))
+                            inner()
+                        }
+                    }
+                )
+                WatermarkPosition.entries.forEach { p ->
+                    FilterChip(selected = state.watermarkPos == p, onClick = { onWatermarkPos(p) }, label = { Text(p.displayName) })
+                }
+            }
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("质量 ${state.quality}", color = Color.White, style = MaterialTheme.typography.labelLarge)
+            Slider(
+                value = state.quality.toFloat(),
+                onValueChange = { onQuality(it.toInt()) },
+                valueRange = 40f..100f,
+                modifier = Modifier.weight(1f)
+            )
+        }
         if (saving) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = Color.White)
-                Text(stringResource(R.string.saving_image), color = Color.White, style = MaterialTheme.typography.bodySmall)
+                Text("正在保存...", color = Color.White, style = MaterialTheme.typography.bodySmall)
             }
         }
-
-        lastResult?.let { (uri, mime) ->
+        state.lastResult?.let { r ->
             AssistChip(
-                onClick = { onShare(uri, mime) },
+                onClick = { onShare(r.shareUri, r.mimeType) },
                 label = { Text(stringResource(R.string.action_share)) },
                 leadingIcon = { Icon(Icons.Outlined.IosShare, null) }
             )
@@ -270,7 +342,10 @@ private fun RectCropEditor(
     bitmap: android.graphics.Bitmap,
     cropRect: NormalizedCropRect,
     showOverlay: Boolean,
-    onCropChanged: (NormalizedCropRect) -> Unit
+    strokes: List<List<Pair<Float, Float>>>,
+    drawMode: Boolean,
+    onCornerMoved: (Int, Float, Float) -> Unit,
+    onStroke: (Float, Float, Boolean) -> Unit
 ) {
     var canvasSize by remember { mutableStateOf(IntSize.Zero) }
     val density = LocalDensity.current
@@ -285,20 +360,29 @@ private fun RectCropEditor(
         modifier = Modifier
             .fillMaxSize()
             .onSizeChanged { canvasSize = it }
-            .pointerInput(displayRect, showOverlay, cropRect) {
-                if (!showOverlay) return@pointerInput
+            .pointerInput(displayRect, showOverlay, cropRect, drawMode) {
                 var dragging = -1
+                var strokeStarted = false
                 detectDragGestures(
                     onDragStart = { offset ->
-                        dragging = nearestHandle(offset, cropRect, displayRect, touchSlopPx)
+                        if (drawMode) {
+                            strokeStarted = true
+                            val rel = displayRectInverse(offset, displayRect)
+                            onStroke(rel.x, rel.y, true)
+                        } else if (showOverlay) {
+                            dragging = nearestHandle(offset, cropRect, displayRect, touchSlopPx)
+                        }
                     },
-                    onDragEnd = { dragging = -1 },
-                    onDragCancel = { dragging = -1 },
+                    onDragEnd = { dragging = -1; strokeStarted = false },
+                    onDragCancel = { dragging = -1; strokeStarted = false },
                     onDrag = { change, _ ->
                         change.consume()
-                        if (dragging < 0) return@detectDragGestures
                         val rel = displayRectInverse(change.position, displayRect)
-                        onCropChanged(cropRect.moveCorner(dragging, rel.x, rel.y))
+                        if (drawMode) {
+                            onStroke(rel.x, rel.y, false)
+                        } else if (dragging >= 0) {
+                            onCornerMoved(dragging, rel.x, rel.y)
+                        }
                     }
                 )
             }
@@ -306,6 +390,15 @@ private fun RectCropEditor(
         drawScaledImage(imageBitmap, bitmap.width, bitmap.height, displayRect)
         if (showOverlay) {
             drawRectCropOverlay(cropRect, displayRect, handleRadiusPx)
+        }
+        strokes.forEach { pts ->
+            if (pts.size < 2) return@forEach
+            val p = Path()
+            p.moveTo(displayRect.left + pts.first().first * displayRect.width, displayRect.top + pts.first().second * displayRect.height)
+            pts.drop(1).forEach { (x, y) ->
+                p.lineTo(displayRect.left + x * displayRect.width, displayRect.top + y * displayRect.height)
+            }
+            drawPath(p, color = Color.Red, style = Stroke(width = 6f))
         }
     }
 }

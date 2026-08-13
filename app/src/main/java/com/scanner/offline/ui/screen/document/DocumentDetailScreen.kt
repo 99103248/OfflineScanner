@@ -12,6 +12,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.IosShare
 import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material3.AssistChip
@@ -45,7 +46,8 @@ import java.io.File
 fun DocumentDetailScreen(
     docId: Long,
     onExportClick: () -> Unit,
-    onOcrClick: (String) -> Unit,
+    onOcrClick: (String, Long) -> Unit,
+    onEditClick: (String, Long) -> Unit,
     onBack: () -> Unit,
     viewModel: DocumentDetailViewModel = hiltViewModel()
 ) {
@@ -89,7 +91,11 @@ fun DocumentDetailScreen(
                     )
                 }
                 items(items = current.pages, key = { it.id }) { page ->
-                    PageCard(page = page, onOcrClick = { onOcrClick(page.processedPath) })
+                    PageCard(
+                        page = page,
+                        onOcrClick = { onOcrClick(page.processedPath, page.id) },
+                        onEditClick = { onEditClick(page.processedPath, page.id) }
+                    )
                 }
             }
         }
@@ -98,7 +104,7 @@ fun DocumentDetailScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun PageCard(page: Page, onOcrClick: () -> Unit) {
+private fun PageCard(page: Page, onOcrClick: () -> Unit, onEditClick: () -> Unit) {
     Card(
         modifier = Modifier.fillMaxWidth(),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -129,6 +135,11 @@ private fun PageCard(page: Page, onOcrClick: () -> Unit) {
                 text = "第 ${page.index + 1} 页",
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.weight(1f)
+            )
+            AssistChip(
+                onClick = onEditClick,
+                label = { Text("编辑") },
+                leadingIcon = { Icon(Icons.Outlined.Crop, null) }
             )
             AssistChip(
                 onClick = onOcrClick,
