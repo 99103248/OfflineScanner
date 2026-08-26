@@ -22,11 +22,9 @@ val canSignRelease: Boolean = offscanKeystoreB64.isNotBlank() &&
     offscanKeyPwd.isNotBlank()
 
 // 在 android 块之外的诊断输出（top-level 一定会被求值，不会被 DSL 延迟）
-println("[OffScan signing] OFFSCAN_KEYSTORE_BASE64 length=${offscanKeystoreB64.length}")
-println("[OffScan signing] OFFSCAN_KEYSTORE_PASSWORD length=${offscanKeystorePwd.length}")
-println("[OffScan signing] OFFSCAN_KEY_ALIAS length=${offscanKeyAlias.length}")
-println("[OffScan signing] OFFSCAN_KEY_PASSWORD length=${offscanKeyPwd.length}")
-println("[OffScan signing] canSignRelease=$canSignRelease")
+if (canSignRelease) {
+    logger.lifecycle("[OffScan signing] canSignRelease=true, keystore length=${offscanKeystoreB64.length}")
+}
 
 android {
     namespace = "com.scanner.offline"
@@ -68,7 +66,7 @@ android {
                     parentFile.mkdirs()
                     writeBytes(Base64.getDecoder().decode(offscanKeystoreB64))
                 }
-                println("[OffScan signing] Wrote keystore to: ${keystoreFile.absolutePath} (${keystoreFile.length()} bytes)")
+                logger.lifecycle("[OffScan signing] Wrote keystore to: ${keystoreFile.absolutePath} (${keystoreFile.length()} bytes)")
                 storeFile = keystoreFile
                 storePassword = offscanKeystorePwd
                 this.keyAlias = offscanKeyAlias
@@ -197,4 +195,8 @@ dependencies {
     androidTestImplementation(libs.androidx.test.espresso)
     androidTestImplementation(libs.kotlinx.coroutines.test)
     androidTestImplementation(platform(libs.androidx.compose.bom))
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }

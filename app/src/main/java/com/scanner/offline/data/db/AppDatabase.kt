@@ -6,7 +6,7 @@ import androidx.room.RoomDatabase
 @Database(
     entities = [DocumentEntity::class, PageEntity::class],
     version = 1,
-    exportSchema = false
+    exportSchema = true
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun documentDao(): DocumentDao

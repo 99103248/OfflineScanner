@@ -15,7 +15,6 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 import kotlin.math.hypot
 import kotlin.math.max
-import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -115,11 +114,6 @@ class PerspectiveCorrector {
     }
 
     private fun dist(a: Point, b: Point): Double = hypot(a.x - b.x, a.y - b.y)
-
-    @Suppress("unused")
-    private fun unused() {
-        min(0, 0)
-    }
 
     companion object {
         private const val TAG = "PerspectiveCorrector"

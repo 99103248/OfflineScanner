@@ -7,13 +7,25 @@
 -keepattributes RuntimeVisibleAnnotations,RuntimeVisibleParameterAnnotations,RuntimeVisibleTypeAnnotations
 
 # ------------------------------------------------------------
-# 应用自身代码：暂时全部保留
-# 优化只针对依赖库，业务代码不混淆，方便排查崩溃和保证功能正确
-# 后续上线前可以收紧规则
+# 应用自身代码：按层收紧
+# domain model（序列化 / 反序列化 / Room Entity 需要字段名）
+# engine / util / export 层允许混淆
 # ------------------------------------------------------------
--keep class com.scanner.offline.** { *; }
--keepclassmembers class com.scanner.offline.** { *; }
 
+# Domain models（Room Entity、导航参数、数据类等需要字段名称）
+-keep class com.scanner.offline.domain.model.** { *; }
+-keep class com.scanner.offline.data.db.** { *; }
+-keep class com.scanner.offline.data.storage.** { *; }
+
+# Hilt 注入的 ViewModel
+-keep class * extends androidx.lifecycle.ViewModel { *; }
+
+# UI 层 Composable 需要保留（导航反射）
+-keep class com.scanner.offline.ui.** { *; }
+
+# domain usecase / repository 接口（Hilt 需要）
+-keep class com.scanner.offline.domain.repository.** { *; }
+-keep class com.scanner.offline.domain.usecase.** { *; }
 # ------------------------------------------------------------
 # Hilt
 # ------------------------------------------------------------

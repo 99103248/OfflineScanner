@@ -12,8 +12,7 @@ import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
-import kotlin.math.abs
-import kotlin.math.atan2
+
 
 /**
  * 文档边缘检测：基于 OpenCV 的 Canny + findContours + approxPolyDP 算法。
@@ -104,9 +103,14 @@ class EdgeDetector {
             Imgproc.approxPolyDP(curve, approx, 0.02 * peri, true)
             val pts = approx.toList()
             curve.release(); approx.release()
-            if (pts.size == 4 && area > bestArea && Imgproc.isContourConvex(MatOfPoint(*pts.toTypedArray()))) {
-                bestQuad = pts
-                bestArea = area
+            if (pts.size == 4 && area > bestArea) {
+                val convexCheck = MatOfPoint(*pts.toTypedArray())
+                val isConvex = Imgproc.isContourConvex(convexCheck)
+                convexCheck.release()
+                if (isConvex) {
+                    bestQuad = pts
+                    bestArea = area
+                }
             }
         }
         contours.forEach { it.release() }
@@ -158,10 +162,6 @@ class EdgeDetector {
     private fun release(vararg mats: Mat) {
         mats.forEach { it.release() }
     }
-
-    @Suppress("unused")
-    private fun debugAtan2(p: PointF, cx: Double, cy: Double): Double =
-        atan2((p.y - cy), (p.x - cx))
 
     companion object {
         private const val TAG = "EdgeDetector"

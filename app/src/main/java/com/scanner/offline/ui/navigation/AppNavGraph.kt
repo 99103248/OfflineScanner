@@ -2,23 +2,31 @@ package com.scanner.offline.ui.navigation
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.navArgument
+import com.scanner.offline.domain.model.ScanSessionViewModel
+import com.scanner.offline.ui.screen.camera.BurstProcessScreen
 import com.scanner.offline.ui.screen.camera.CameraScreen
 import com.scanner.offline.ui.screen.crop.CropScreen
 import com.scanner.offline.ui.screen.document.DocumentDetailScreen
-import com.scanner.offline.ui.screen.export.ExportScreen
 import com.scanner.offline.ui.screen.edit.ImageEditMode
 import com.scanner.offline.ui.screen.edit.ImageEditScreen
+import com.scanner.offline.ui.screen.export.ExportScreen
 import com.scanner.offline.ui.screen.export.FormatConvertScreen
 import com.scanner.offline.ui.screen.filter.FilterScreen
 import com.scanner.offline.ui.screen.home.HomeScreen
 import com.scanner.offline.ui.screen.me.MeScreen
 import com.scanner.offline.ui.screen.ocr.OcrScreen
+import com.scanner.offline.ui.screen.tools.BarcodeScreen
+import com.scanner.offline.ui.screen.tools.BatchEditScreen
+import com.scanner.offline.ui.screen.tools.PdfToolScreen
+import com.scanner.offline.ui.screen.tools.StitchScreen
 import com.scanner.offline.ui.screen.tools.ToolsScreen
+import java.net.URLDecoder
 
 @Composable
 fun AppNavGraph(
@@ -59,8 +67,7 @@ fun AppNavGraph(
         }
 
         composable(AppRoute.Camera.path) {
-            val sessionVm: com.scanner.offline.domain.model.ScanSessionViewModel =
-                androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel()
+            val sessionVm: ScanSessionViewModel = hiltViewModel()
             CameraScreen(
                 onCaptured = { uri ->
                     navController.navigate(AppRoute.Crop.create(uri)) {
@@ -84,7 +91,7 @@ fun AppNavGraph(
             )
         ) { backStackEntry ->
             val raw = backStackEntry.arguments?.getString("imageUri").orEmpty()
-            val uri = java.net.URLDecoder.decode(raw, "UTF-8")
+            val uri = URLDecoder.decode(raw, "UTF-8")
             CropScreen(
                 imageUri = uri,
                 onCropped = { processedPath ->
@@ -192,7 +199,7 @@ fun AppNavGraph(
         }
 
         composable(AppRoute.Burst.path) {
-            com.scanner.offline.ui.screen.camera.BurstProcessScreen(
+            BurstProcessScreen(
                 onDone = { docId ->
                     navController.navigate(AppRoute.DocumentDetail.create(docId)) {
                         popUpTo(TopRoute.Home.path)
@@ -202,16 +209,16 @@ fun AppNavGraph(
             )
         }
         composable(AppRoute.Batch.path) {
-            com.scanner.offline.ui.screen.tools.BatchEditScreen(onBack = { navController.popBackStack() })
+            BatchEditScreen(onBack = { navController.popBackStack() })
         }
         composable(AppRoute.Stitch.path) {
-            com.scanner.offline.ui.screen.tools.StitchScreen(onBack = { navController.popBackStack() })
+            StitchScreen(onBack = { navController.popBackStack() })
         }
         composable(AppRoute.PdfTools.path) {
-            com.scanner.offline.ui.screen.tools.PdfToolScreen(onBack = { navController.popBackStack() })
+            PdfToolScreen(onBack = { navController.popBackStack() })
         }
         composable(AppRoute.Barcode.path) {
-            com.scanner.offline.ui.screen.tools.BarcodeScreen(onBack = { navController.popBackStack() })
+            BarcodeScreen(onBack = { navController.popBackStack() })
         }
     }
 }

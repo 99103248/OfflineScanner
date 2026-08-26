@@ -100,17 +100,13 @@ class DocumentExporter {
     private fun wrapText(line: String, paint: Paint, maxWidth: Float): List<String> {
         if (paint.measureText(line) <= maxWidth) return listOf(line)
         val list = mutableListOf<String>()
-        val sb = StringBuilder()
-        line.forEach { ch ->
-            sb.append(ch)
-            if (paint.measureText(sb.toString()) > maxWidth) {
-                sb.deleteCharAt(sb.length - 1)
-                list += sb.toString()
-                sb.clear()
-                sb.append(ch)
-            }
+        var offset = 0
+        while (offset < line.length) {
+            val count = paint.breakText(line, offset, line.length, true, maxWidth, null)
+            if (count <= 0) break // 安全兜底，避免死循环
+            list += line.substring(offset, offset + count)
+            offset += count
         }
-        if (sb.isNotEmpty()) list += sb.toString()
         return list
     }
 

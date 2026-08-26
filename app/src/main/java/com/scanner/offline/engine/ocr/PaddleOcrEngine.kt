@@ -16,8 +16,6 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
-import kotlin.math.max
-import kotlin.math.min
 import kotlin.system.measureTimeMillis
 
 /**
@@ -101,11 +99,6 @@ class PaddleOcrEngine @Inject constructor(
             )
         }
     )
-
-    @Suppress("unused")
-    private fun unused() {
-        max(0, 0); min(0, 0)
-    }
 
     companion object {
         private const val TAG = "PaddleOcrEngine"

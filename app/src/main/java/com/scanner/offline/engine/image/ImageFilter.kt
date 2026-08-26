@@ -149,11 +149,6 @@ class ImageFilter {
         )
     }
 
-    @Suppress("unused")
-    private fun unused() {
-        Size(0.0, 0.0)
-    }
-
     companion object {
         private const val TAG = "ImageFilter"
     }
