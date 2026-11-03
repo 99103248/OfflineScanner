@@ -67,4 +67,33 @@ class NormalizedCropRectTest {
         val err = kotlin.math.abs(pixelRatio - expected) / expected
         assertTrue(err < 0.12f)
     }
+
+    @Test
+    fun `平移矩形且边界不越界`() {
+        val rect = NormalizedCropRect(0.2f, 0.2f, 0.6f, 0.6f)
+        val moved = rect.translate(0.1f, -0.1f)
+        assertEquals(0.3f, moved.left, 0.0001f)
+        assertEquals(0.1f, moved.top, 0.0001f)
+        assertEquals(0.7f, moved.right, 0.0001f)
+        assertEquals(0.5f, moved.bottom, 0.0001f)
+
+        // 超出边界被 clamp
+        val clamped = rect.translate(-0.5f, 0.8f)
+        assertEquals(0f, clamped.left, 0.0001f)
+        assertEquals(0.4f, clamped.right, 0.0001f)
+        assertEquals(0.6f, clamped.top, 0.0001f)
+        assertEquals(1.0f, clamped.bottom, 0.0001f)
+    }
+
+    @Test
+    fun `移动边缘自由模式正常生效`() {
+        val rect = NormalizedCropRect(0.2f, 0.2f, 0.8f, 0.8f)
+        val topMoved = rect.moveEdge(0, 0.4f)
+        assertEquals(0.4f, topMoved.top, 0.0001f)
+        assertEquals(0.8f, topMoved.bottom, 0.0001f)
+
+        val rightMoved = rect.moveEdge(1, 0.7f)
+        assertEquals(0.7f, rightMoved.right, 0.0001f)
+        assertEquals(0.2f, rightMoved.left, 0.0001f)
+    }
 }

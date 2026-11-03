@@ -12,10 +12,11 @@ import java.io.InputStream
 object BitmapUtils {
 
     /** 从 URI 读取 Bitmap，并按 Exif 旋转 */
-    fun decode(resolver: ContentResolver, uri: Uri, maxSize: Int = 4096): Bitmap? {
-        // 第一遍读尺寸
+    fun decode(resolver: ContentResolver, uri: Uri, maxSize: Int = 4096): Bitmap? = runCatching {
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         resolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+        if (opts.outWidth <= 0 || opts.outHeight <= 0) return@runCatching null
+
         val sample = calcSampleSize(opts.outWidth, opts.outHeight, maxSize)
 
         val decode = BitmapFactory.Options().apply {
@@ -24,13 +25,14 @@ object BitmapUtils {
         }
         val bmp: Bitmap = resolver.openInputStream(uri)?.use {
             BitmapFactory.decodeStream(it, null, decode)
-        } ?: return null
+        } ?: return@runCatching null
 
         val orientation = readOrientation(resolver, uri)
-        return rotate(bmp, orientation)
-    }
+        rotate(bmp, orientation)
+    }.getOrNull()
 
-    fun decode(file: File, maxSize: Int = 4096): Bitmap? {
+    fun decode(file: File, maxSize: Int = 4096): Bitmap? = runCatching {
+        if (!file.exists() || !file.canRead()) return@runCatching null
         val opts = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, opts)
         val sample = calcSampleSize(opts.outWidth, opts.outHeight, maxSize)
@@ -38,10 +40,10 @@ object BitmapUtils {
             inSampleSize = sample
             inPreferredConfig = Bitmap.Config.ARGB_8888
         }
-        val bmp = BitmapFactory.decodeFile(file.absolutePath, decode) ?: return null
+        val bmp = BitmapFactory.decodeFile(file.absolutePath, decode) ?: return@runCatching null
         val orientation = readOrientation(file)
-        return rotate(bmp, orientation)
-    }
+        rotate(bmp, orientation)
+    }.getOrNull()
 
     private fun calcSampleSize(w: Int, h: Int, maxSize: Int): Int {
         if (w <= 0 || h <= 0) return 1
@@ -69,6 +71,9 @@ object BitmapUtils {
         )
 
     private fun rotate(src: Bitmap, orientation: Int): Bitmap {
+        if (orientation == ExifInterface.ORIENTATION_NORMAL || orientation == ExifInterface.ORIENTATION_UNDEFINED) {
+            return src
+        }
         val matrix = Matrix()
         when (orientation) {
             ExifInterface.ORIENTATION_ROTATE_90 -> matrix.postRotate(90f)

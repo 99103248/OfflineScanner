@@ -40,6 +40,7 @@ class PerspectiveCorrector {
     }
 
     private fun correctWithOpenCv(source: Bitmap, normalizedPts: List<PointF>): Bitmap {
+        check(OpenCvLoader.ensureLoaded()) { "OpenCV 未加载" }
         val w = source.width.toDouble()
         val h = source.height.toDouble()
         val srcPts = normalizedPts.map { Point(it.x * w, it.y * h) }

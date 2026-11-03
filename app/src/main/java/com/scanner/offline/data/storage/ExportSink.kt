@@ -55,11 +55,15 @@ sealed class ExportSink {
         override val displayName: String get() = file.name
         override val outputFile: File get() = file
         override val shareUri: Uri
-            get() = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
+            get() = runCatching {
+                FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    file
+                )
+            }.getOrElse {
+                Uri.fromFile(file)
+            }
 
         override fun openOutputStream(): OutputStream = FileOutputStream(file)
     }

@@ -96,6 +96,7 @@ class ImageFilter {
     }
 
     private fun removeShadowOpenCv(source: Bitmap): Bitmap {
+        check(OpenCvLoader.ensureLoaded()) { "OpenCV 未加载" }
         val src = Mat()
         Utils.bitmapToMat(source, src)
 

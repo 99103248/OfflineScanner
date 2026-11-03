@@ -15,19 +15,21 @@ sealed class TopRoute(val path: String) {
  * 路径中的 {imageUri} 等是占位参数，跳转时拼上实际值。
  */
 sealed class AppRoute(val path: String) {
-    /** 拍照 */
-    data object Camera : AppRoute("camera")
-
-    /** 裁剪 / 边缘检测，传入图片 URI */
-    data object Crop : AppRoute("crop?imageUri={imageUri}") {
-        fun create(imageUri: String) =
-            "crop?imageUri=${java.net.URLEncoder.encode(imageUri, "UTF-8")}"
+    /** 拍照；docId >= 0 表示把拍到的页面追加到已有文档 */
+    data object Camera : AppRoute("camera?docId={docId}") {
+        fun create(docId: Long? = null) = "camera?docId=${docId ?: -1}"
     }
 
-    /** 滤镜，传入裁剪后图片路径 */
-    data object Filter : AppRoute("filter?imagePath={imagePath}") {
-        fun create(imagePath: String) =
-            "filter?imagePath=${java.net.URLEncoder.encode(imagePath, "UTF-8")}"
+    /** 裁剪 / 边缘检测，传入图片 URI；docId >= 0 表示追加到已有文档 */
+    data object Crop : AppRoute("crop?imageUri={imageUri}&docId={docId}") {
+        fun create(imageUri: String, docId: Long? = null) =
+            "crop?imageUri=${java.net.URLEncoder.encode(imageUri, "UTF-8")}&docId=${docId ?: -1}"
+    }
+
+    /** 滤镜，传入裁剪后图片路径；docId >= 0 表示追加到已有文档 */
+    data object Filter : AppRoute("filter?imagePath={imagePath}&docId={docId}") {
+        fun create(imagePath: String, docId: Long? = null) =
+            "filter?imagePath=${java.net.URLEncoder.encode(imagePath, "UTF-8")}&docId=${docId ?: -1}"
     }
 
     /** OCR 识别 */
@@ -60,4 +62,9 @@ sealed class AppRoute(val path: String) {
     data object Stitch : AppRoute("stitch")
     data object PdfTools : AppRoute("pdfTools")
     data object Barcode : AppRoute("barcode")
+    data object IdCard : AppRoute("idCard")
+    data object Settings : AppRoute("settings")
+
+    /** 回收站 */
+    data object Trash : AppRoute("trash")
 }

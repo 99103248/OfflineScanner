@@ -34,11 +34,15 @@ class CropViewModel @Inject constructor(
     fun load(imageUri: String) {
         viewModelScope.launch {
             val bmp = withContext(Dispatchers.IO) {
-                val uri = Uri.parse(imageUri)
-                if (uri.scheme == "file" || uri.scheme == null) {
-                    BitmapUtils.decode(java.io.File(uri.path ?: imageUri))
+                if (java.io.File(imageUri).exists()) {
+                    BitmapUtils.decode(java.io.File(imageUri))
                 } else {
-                    BitmapUtils.decode(context.contentResolver, uri)
+                    val uri = Uri.parse(imageUri)
+                    if (uri.scheme == "file" || uri.scheme == null) {
+                        BitmapUtils.decode(java.io.File(uri.path ?: imageUri))
+                    } else {
+                        BitmapUtils.decode(context.contentResolver, uri)
+                    }
                 }
             }
             if (bmp == null) {
@@ -60,6 +64,33 @@ class CropViewModel @Inject constructor(
         _state.value = cur.copy(corners = newPts)
     }
 
+    fun moveEdge(edgeIndex: Int, dx: Float, dy: Float) {
+        val cur = _state.value as? CropState.Ready ?: return
+        if (cur.corners.size != 4) return
+        val i1 = edgeIndex
+        val i2 = (edgeIndex + 1) % 4
+        val p1 = cur.corners[i1]
+        val p2 = cur.corners[i2]
+        val newPts = cur.corners.toMutableList()
+        newPts[i1] = PointF((p1.x + dx).coerceIn(0f, 1f), (p1.y + dy).coerceIn(0f, 1f))
+        newPts[i2] = PointF((p2.x + dx).coerceIn(0f, 1f), (p2.y + dy).coerceIn(0f, 1f))
+        _state.value = cur.copy(corners = newPts)
+    }
+
+    fun translateCorners(dx: Float, dy: Float) {
+        val cur = _state.value as? CropState.Ready ?: return
+        val minX = cur.corners.minOf { it.x }
+        val maxX = cur.corners.maxOf { it.x }
+        val minY = cur.corners.minOf { it.y }
+        val maxY = cur.corners.maxOf { it.y }
+        val clampedDx = dx.coerceIn(-minX, 1f - maxX)
+        val clampedDy = dy.coerceIn(-minY, 1f - maxY)
+        val newPts = cur.corners.map {
+            PointF(it.x + clampedDx, it.y + clampedDy)
+        }
+        _state.value = cur.copy(corners = newPts)
+    }
+
     /** 完成裁剪，输出处理后的图片路径 */
     fun confirm(onDone: (String) -> Unit, onError: (String) -> Unit) {
         val cur = _state.value as? CropState.Ready ?: return
@@ -70,8 +101,6 @@ class CropViewModel @Inject constructor(
                     val clamped = corrector.clamp(corrected, 2400)
                     val tmp = storage.newCacheImage("crop")
                     storage.saveBitmap(clamped, tmp)
-                    if (clamped !== corrected) corrected.recycle()
-                    clamped.recycle()
                     tmp
                 }
             }

@@ -3,6 +3,7 @@ package com.scanner.offline.ui.screen.me
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -14,15 +15,19 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Backup
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.FolderSpecial
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.RestartAlt
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -41,12 +46,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.scanner.offline.BuildConfig
 import com.scanner.offline.R
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MeScreen(viewModel: MeViewModel = hiltViewModel()) {
+fun MeScreen(
+    onSettingsClick: () -> Unit = {},
+    viewModel: MeViewModel = hiltViewModel()
+) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
@@ -55,6 +64,18 @@ fun MeScreen(viewModel: MeViewModel = hiltViewModel()) {
         contract = ActivityResultContracts.OpenDocumentTree()
     ) { uri: Uri? ->
         if (uri != null) viewModel.onDirectoryChosen(uri)
+    }
+
+    val createBackup = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/zip")
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.backup(uri)
+    }
+
+    val openBackup = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) viewModel.restore(uri)
     }
 
     LaunchedEffect(state.lastActionMessage) {
@@ -116,6 +137,67 @@ fun MeScreen(viewModel: MeViewModel = hiltViewModel()) {
 
             HorizontalDivider()
 
+            // ───── 备份与恢复 ─────
+            ListItem(
+                headlineContent = { Text("备份与恢复") },
+                supportingContent = { Text("把全部文档打包为一个 zip，或从 zip 恢复到本机") },
+                leadingContent = { Icon(Icons.Outlined.Backup, null) }
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+            ) {
+                Button(
+                    onClick = {
+                        createBackup.launch("offscan_backup_${System.currentTimeMillis()}.zip")
+                    },
+                    enabled = !state.busy
+                ) {
+                    Icon(Icons.Outlined.Backup, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("备份全部文档")
+                }
+                Spacer(Modifier.width(8.dp))
+                OutlinedButton(
+                    onClick = {
+                        openBackup.launch(arrayOf("application/zip", "application/octet-stream", "*/*"))
+                    },
+                    enabled = !state.busy
+                ) {
+                    Icon(Icons.Outlined.Restore, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("从备份恢复")
+                }
+            }
+            if (state.busy) {
+                LinearProgressIndicator(
+                    progress = { state.progress },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
+                )
+                state.progressText?.let {
+                    Text(
+                        text = it,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            HorizontalDivider()
+
+            // ───── 设置 ─────
+            ListItem(
+                headlineContent = { Text("设置") },
+                supportingContent = { Text("默认滤镜、导出质量、PDF 纸张、主题、回收站") },
+                leadingContent = { Icon(Icons.Outlined.Settings, null) },
+                modifier = Modifier.clickable(onClick = onSettingsClick)
+            )
+
+            HorizontalDivider()
+
             // ───── OCR 引擎 ─────
             ListItem(
                 headlineContent = { Text(stringResource(R.string.me_ocr_engine)) },
@@ -130,7 +212,7 @@ fun MeScreen(viewModel: MeViewModel = hiltViewModel()) {
             // ───── 关于 ─────
             ListItem(
                 headlineContent = { Text(stringResource(R.string.me_about)) },
-                supportingContent = { Text("OffScan v1.0 · 全部识别和导出均在本机完成") },
+                supportingContent = { Text("OffScan v${BuildConfig.VERSION_NAME} · 全部识别和导出均在本机完成") },
                 leadingContent = { Icon(Icons.Outlined.Info, null) }
             )
 

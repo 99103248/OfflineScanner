@@ -47,6 +47,7 @@ class EdgeDetector {
         val w = bitmap.width
         val h = bitmap.height
         if (w < 50 || h < 50) return null
+        if (!OpenCvLoader.ensureLoaded()) return null
 
         // 1. 缩到统一处理尺寸，避免大图慢
         val targetMax = 800.0

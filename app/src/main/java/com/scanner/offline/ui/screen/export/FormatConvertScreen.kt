@@ -83,14 +83,9 @@ fun FormatConvertScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            runCatching {
-                context.contentResolver.takePersistableUriPermission(
-                    uri,
-                    android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            }
-            sourceUri = uri.toString()
-            sourceLabel = uri.lastPathSegment ?: uri.toString()
+            val localPath = com.scanner.offline.util.UriUtils.copyUriToCache(context, uri, "convert") ?: uri.toString()
+            sourceUri = localPath
+            sourceLabel = uri.lastPathSegment ?: localPath
         }
     }
 

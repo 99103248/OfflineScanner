@@ -85,7 +85,7 @@ fun StitchScreen(onBack: () -> Unit, viewModel: StitchViewModel = hiltViewModel(
     var uris by remember { mutableStateOf<List<String>>(emptyList()) }
     var mode by remember { mutableStateOf(StitchMode.VERTICAL) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { list ->
-        uris = list.map { it.toString() }
+        uris = list.mapNotNull { com.scanner.offline.util.UriUtils.copyUriToCache(context, it) }
     }
     Scaffold(topBar = {
         TopAppBar(title = { Text("图片拼接") }, navigationIcon = {

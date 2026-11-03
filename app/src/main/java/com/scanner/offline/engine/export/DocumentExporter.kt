@@ -2,10 +2,12 @@ package com.scanner.offline.engine.export
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.pdf.PdfDocument
 import com.scanner.offline.domain.model.ExportFormat
+import com.scanner.offline.domain.model.PdfPaperSize
 import com.scanner.offline.domain.model.TableData
 import java.io.File
 import java.io.FileOutputStream
@@ -36,27 +38,150 @@ class DocumentExporter {
     // ---------- PDF ----------
 
     /** 多张图片合并为一份 PDF。每张图片独占一页。 */
-    fun imagesToPdf(imagePaths: List<String>, output: File): File {
-        FileOutputStream(output).use { os -> imagesToPdf(imagePaths, os) }
+    fun imagesToPdf(
+        imagePaths: List<String>,
+        output: File,
+        paperSize: PdfPaperSize = PdfPaperSize.A4,
+        maxImageDimension: Int = 3000
+    ): File {
+        FileOutputStream(output).use { os -> imagesToPdf(imagePaths, os, paperSize, maxImageDimension) }
         return output
     }
 
-    fun imagesToPdf(imagePaths: List<String>, output: OutputStream) {
+    fun imagesToPdf(
+        imagePaths: List<String>,
+        output: OutputStream,
+        paperSize: PdfPaperSize = PdfPaperSize.A4,
+        maxImageDimension: Int = 3000
+    ) {
+        imagesToPdfInternal(imagePaths, pageTexts = null, output, paperSize, maxImageDimension)
+    }
+
+    /**
+     * 可搜索 PDF：每页在图片下方叠加一层"隐形"OCR 文字（透明绘制）。
+     * PDF 阅读器中可直接选中和搜索这些文字，而视觉上仍是扫描图。
+     *
+     * [pageTexts] 与 imagePaths 一一对应；空白文本按无文字处理。
+     */
+    fun imagesToSearchablePdf(
+        imagePaths: List<String>,
+        pageTexts: List<String>,
+        output: OutputStream,
+        paperSize: PdfPaperSize = PdfPaperSize.A4,
+        maxImageDimension: Int = 3000
+    ) {
+        require(imagePaths.size == pageTexts.size) { "图片与文本数量不一致" }
+        imagesToPdfInternal(imagePaths, pageTexts, output, paperSize, maxImageDimension)
+    }
+
+    private fun imagesToPdfInternal(
+        imagePaths: List<String>,
+        pageTexts: List<String>?,
+        output: OutputStream,
+        paperSize: PdfPaperSize,
+        maxImageDimension: Int
+    ) {
         val pdf = PdfDocument()
         try {
             imagePaths.forEachIndexed { index, path ->
-                val bmp = BitmapFactory.decodeFile(path) ?: error("无法解码图片: $path")
+                val bmp = decodeForPdf(path, maxImageDimension) ?: error("无法解码图片: $path")
+                val (pageWidth, pageHeight) = pageSizeFor(paperSize, bmp.width, bmp.height)
                 val info = PdfDocument.PageInfo
-                    .Builder(bmp.width, bmp.height, index + 1)
+                    .Builder(pageWidth, pageHeight, index + 1)
                     .create()
                 val page = pdf.startPage(info)
-                page.canvas.drawBitmap(bmp, 0f, 0f, null)
+                val margin = if (paperSize == PdfPaperSize.ORIGINAL) 0f else PDF_MARGIN_PT
+                drawFittedBitmap(page.canvas, bmp, pageWidth, pageHeight, margin)
+                val text = pageTexts?.getOrNull(index)
+                if (!text.isNullOrBlank()) {
+                    drawInvisibleTextLayer(page.canvas, text, pageWidth, pageHeight, margin)
+                }
                 pdf.finishPage(page)
                 bmp.recycle()
             }
             pdf.writeTo(output)
         } finally {
             pdf.close()
+        }
+    }
+
+    /**
+     * 页面尺寸（单位 pt）。
+     * ORIGINAL 保留旧行为（页面 = 图片像素尺寸）；A4/Letter 按图片横竖自动切方向。
+     */
+    private fun pageSizeFor(paper: PdfPaperSize, imageWidth: Int, imageHeight: Int): Pair<Int, Int> {
+        if (paper == PdfPaperSize.ORIGINAL) {
+            return imageWidth.coerceAtLeast(1) to imageHeight.coerceAtLeast(1)
+        }
+        val landscape = imageWidth > imageHeight
+        val w = if (landscape) paper.heightPt else paper.widthPt
+        val h = if (landscape) paper.widthPt else paper.heightPt
+        return w to h
+    }
+
+    /** 等比缩放并居中绘制到页面内，四周留白。 */
+    private fun drawFittedBitmap(
+        canvas: Canvas,
+        bmp: Bitmap,
+        pageWidth: Int,
+        pageHeight: Int,
+        margin: Float
+    ) {
+        val availW = (pageWidth - margin * 2).coerceAtLeast(1f)
+        val availH = (pageHeight - margin * 2).coerceAtLeast(1f)
+        val scale = minOf(availW / bmp.width, availH / bmp.height)
+        val drawW = bmp.width * scale
+        val drawH = bmp.height * scale
+        val left = (pageWidth - drawW) / 2f
+        val top = (pageHeight - drawH) / 2f
+        val dst = android.graphics.RectF(left, top, left + drawW, top + drawH)
+        canvas.drawBitmap(bmp, null, dst, Paint(Paint.FILTER_BITMAP_FLAG))
+    }
+
+    /** 按最大边采样解码，避免超大图把内存打爆。 */
+    private fun decodeForPdf(path: String, maxDimension: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > maxDimension || bounds.outHeight / sample > maxDimension) {
+            sample *= 2
+        }
+        val opts = BitmapFactory.Options().apply {
+            inSampleSize = sample
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        return BitmapFactory.decodeFile(path, opts)
+    }
+
+    /**
+     * 隐形文字层：透明画笔逐行绘制，行高按页高等比分布。
+     * 文字对象会真实写入 PDF 内容流，因此可被全文检索与复制。
+     */
+    private fun drawInvisibleTextLayer(
+        canvas: Canvas,
+        text: String,
+        pageWidth: Int,
+        pageHeight: Int,
+        margin: Float
+    ) {
+        val paint = Paint().apply {
+            // 完全透明的文字会被 Skia 直接优化掉，导致 PDF 里没有文字对象。
+            // 用 alpha=1 的黑色：视觉上不可见，但能真实写入内容流供检索。
+            color = Color.argb(1, 0, 0, 0)
+            textSize = (pageHeight * 0.018f).coerceIn(4f, 18f)
+            isAntiAlias = false
+        }
+        val lines = text.split('\n').filter { it.isNotBlank() }
+        if (lines.isEmpty()) return
+        // 行距略大于字号，保证相邻行文字不会互相覆盖导致提取混乱
+        val lineSpacing = (paint.textSize * 1.4f).coerceAtLeast(6f)
+        val usableHeight = (pageHeight - margin * 2).coerceAtLeast(lineSpacing)
+        val maxLines = (usableHeight / lineSpacing).toInt().coerceAtLeast(1)
+        var y = margin + paint.textSize
+        for (line in lines.take(maxLines)) {
+            canvas.drawText(line, margin, y, paint)
+            y += lineSpacing
         }
     }
 
@@ -170,4 +295,9 @@ class DocumentExporter {
         } else {
             Bitmap.CompressFormat.WEBP
         }
+
+    private companion object {
+        /** A4 / Letter 页面的四周留白（pt） */
+        const val PDF_MARGIN_PT = 18f
+    }
 }

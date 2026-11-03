@@ -11,6 +11,18 @@
     <string name="home_title">我的文档</string>
     <string name="home_empty">还没有扫描过任何文档\n点击右下角按钮开始扫描</string>
     <string name="home_fab_scan">扫描</string>
+    <string name="home_search_hint">搜索文档名称或识别文字</string>
+    <string name="home_search_empty">没有匹配的文档</string>
+
+    <!-- 回收站 -->
+    <string name="trash_title">回收站</string>
+    <string name="trash_empty">回收站是空的</string>
+    <string name="trash_deleted_at">删除于 %1$s</string>
+    <string name="action_restore">恢复</string>
+    <string name="action_delete_forever">彻底删除</string>
+    <string name="action_empty_trash">清空</string>
+    <string name="action_favorite">收藏</string>
+    <string name="action_unfavorite">取消收藏</string>
 
     <!-- 工具箱 -->
     <string name="tools_title">工具箱</string>
@@ -34,6 +46,8 @@
     <string name="tool_crop_desc">矩形裁剪后另存为</string>
     <string name="tool_flip">翻转另存为</string>
     <string name="tool_flip_desc">水平 / 垂直翻转或旋转</string>
+    <string name="tool_redact">打码脱敏</string>
+    <string name="tool_redact_desc">黑块 / 马赛克遮挡敏感信息</string>
     <string name="action_apply_crop">应用裁剪</string>
     <string name="action_flip_h">水平翻转</string>
     <string name="action_flip_v">垂直翻转</string>
@@ -48,6 +62,8 @@
     <string name="tool_pdf_desc">合并、拆页、抽页</string>
     <string name="tool_barcode">扫码识别</string>
     <string name="tool_barcode_desc">二维码与条码，完全离线</string>
+    <string name="tool_idcard">证件扫描</string>
+    <string name="tool_idcard_desc">正反面自动校正合成 A4</string>
 
     <!-- 通用 -->
     <string name="action_done">完成</string>

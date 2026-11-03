@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
+    <root-path name="root" path="." />
     <files-path name="docs" path="documents/" />
+    <files-path name="internal_exports" path="exports/" />
+    <files-path name="files" path="." />
     <cache-path name="cache" path="." />
     <external-files-path name="exports" path="exports/" />
+    <external-files-path name="external_files" path="." />
+    <external-cache-path name="external_cache" path="." />
+    <external-path name="external" path="." />
 </paths>

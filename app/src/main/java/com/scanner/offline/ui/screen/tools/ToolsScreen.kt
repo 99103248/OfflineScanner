@@ -18,6 +18,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Badge
 import androidx.compose.material.icons.outlined.CameraAlt
 import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.Description
@@ -26,9 +27,10 @@ import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PictureAsPdf
 import androidx.compose.material.icons.outlined.TextFields
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -43,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.scanner.offline.R
@@ -57,9 +60,11 @@ fun ToolsScreen(
     onBatchClick: () -> Unit,
     onStitchClick: () -> Unit,
     onPdfToolsClick: () -> Unit,
-    onBarcodeClick: () -> Unit
+    onBarcodeClick: () -> Unit,
+    onIdCardClick: () -> Unit
 ) {
-    var pendingEditMode by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    var pendingEditMode by rememberSaveable { mutableStateOf<String?>(null) }
 
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
@@ -70,10 +75,11 @@ fun ToolsScreen(
         }
         val editMode = pendingEditMode
         pendingEditMode = null
+        val path = com.scanner.offline.util.UriUtils.copyUriToCache(context, uri) ?: uri.toString()
         if (editMode != null) {
-            onPickImageForEdit(uri.toString(), editMode)
+            onPickImageForEdit(path, editMode)
         } else {
-            onPickImageForOcr(uri.toString())
+            onPickImageForOcr(path)
         }
     }
 
@@ -88,6 +94,10 @@ fun ToolsScreen(
             pendingEditMode = "flip"
             pickImage.launch("image/*")
         },
+        Tool(Icons.Outlined.VisibilityOff, R.string.tool_redact, R.string.tool_redact_desc) {
+            pendingEditMode = "redact"
+            pickImage.launch("image/*")
+        },
         Tool(Icons.Outlined.PictureAsPdf, R.string.tool_to_pdf, R.string.tool_to_pdf_desc) { pickImage.launch("image/*") },
         Tool(Icons.Outlined.Description, R.string.tool_to_word, R.string.tool_to_word_desc) { pickImage.launch("image/*") },
         Tool(Icons.Outlined.GridOn, R.string.tool_to_excel, R.string.tool_to_excel_desc) { pickImage.launch("image/*") },
@@ -95,7 +105,8 @@ fun ToolsScreen(
         Tool(Icons.Outlined.GridOn, R.string.tool_batch, R.string.tool_batch_desc, onBatchClick),
         Tool(Icons.Outlined.Image, R.string.tool_stitch, R.string.tool_stitch_desc, onStitchClick),
         Tool(Icons.Outlined.PictureAsPdf, R.string.tool_pdf, R.string.tool_pdf_desc, onPdfToolsClick),
-        Tool(Icons.Outlined.TextFields, R.string.tool_barcode, R.string.tool_barcode_desc, onBarcodeClick)
+        Tool(Icons.Outlined.TextFields, R.string.tool_barcode, R.string.tool_barcode_desc, onBarcodeClick),
+        Tool(Icons.Outlined.Badge, R.string.tool_idcard, R.string.tool_idcard_desc, onIdCardClick)
     )
 
     Scaffold(
@@ -132,7 +143,7 @@ private fun ToolCard(tool: Tool) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp),
+            .height(156.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         onClick = tool.onClick
@@ -159,7 +170,9 @@ private fun ToolCard(tool: Tool) {
             Text(
                 text = stringResource(tool.descRes),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                maxLines = 2,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
         }
     }

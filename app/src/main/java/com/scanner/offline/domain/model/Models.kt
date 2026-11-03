@@ -10,7 +10,14 @@ data class Document(
     val name: String,
     val createdAt: Long,
     val updatedAt: Long,
-    val pages: List<Page> = emptyList()
+    val isFavorite: Boolean = false,
+    /** 非 null 表示已进回收站（软删除时间戳） */
+    val deletedAt: Long? = null,
+    val pages: List<Page> = emptyList(),
+    /** 列表页用的页数；完整加载时为 pages.size */
+    val pageCount: Int = pages.size,
+    /** 列表页用的封面缩略图；完整加载时取第一页缩略图 */
+    val coverPath: String? = pages.firstOrNull()?.thumbnailPath
 )
 
 /** 文档中的一页：原图 + 处理后图 + 缩略图 + 已识别文字 */
@@ -59,6 +66,13 @@ data class BoundingBox(
     val height: Int get() = bottom - top
 }
 
+/** 裁剪模式：标准矩形、四角透视拉平、自由手绘套索 */
+enum class CropStyle(val displayName: String) {
+    RECTANGLE("矩形裁剪"),
+    PERSPECTIVE("四角透视"),
+    FREEFORM("手绘套索")
+}
+
 /** 矩形裁剪比例（像素宽/高） */
 enum class CropAspect(val displayName: String, val widthOverHeight: Float?) {
     FREE("自由", null),
@@ -100,6 +114,26 @@ enum class ExportFormat(val extension: String, val mimeType: String, val display
     JPG("jpg", "image/jpeg", "JPG 图片"),
     PNG("png", "image/png", "PNG 图片"),
     WEBP("webp", "image/webp", "WebP 图片")
+}
+
+/** 导出 PDF 时的纸张尺寸。ORIGINAL 表示页面尺寸等于图片像素尺寸（旧行为）。 */
+enum class PdfPaperSize(val displayName: String, val widthPt: Int, val heightPt: Int) {
+    A4("A4", 595, 842),
+    LETTER("Letter", 612, 792),
+    ORIGINAL("按原图", 0, 0)
+}
+
+/** 文档库排序方式（收藏始终置顶） */
+enum class DocumentSort(val displayName: String) {
+    UPDATED("最近修改"),
+    CREATED("创建时间"),
+    NAME("名称")
+}
+
+/** 打码方式 */
+enum class RedactStyle(val displayName: String) {
+    BLACK("黑块"),
+    MOSAIC("马赛克")
 }
 
 /** 表格识别结果（用于 Excel 导出） */

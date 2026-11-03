@@ -5,12 +5,16 @@ import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -21,7 +25,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Cameraswitch
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.FlashAuto
+import androidx.compose.material.icons.outlined.FlashOff
+import androidx.compose.material.icons.outlined.FlashOn
+import androidx.compose.material.icons.outlined.GridOn
 import androidx.compose.material.icons.outlined.Image
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -32,11 +41,13 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -44,14 +55,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
@@ -82,12 +95,24 @@ fun CameraScreen(
     val pickImage = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
-        uri?.toString()?.let(onCaptured)
+        uri?.let {
+            val path = com.scanner.offline.util.UriUtils.copyUriToCache(context, it) ?: it.toString()
+            onCaptured(path)
+        }
     }
 
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var camera by remember { mutableStateOf<Camera?>(null) }
+    var previewView by remember { mutableStateOf<PreviewView?>(null) }
     var burstMode by remember { mutableStateOf(false) }
     var burstUris by remember { mutableStateOf<List<String>>(emptyList()) }
+    var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
+    var flashMode by remember { mutableStateOf(ImageCapture.FLASH_MODE_OFF) }
+    var showGrid by remember { mutableStateOf(true) }
+
+    LaunchedEffect(imageCapture, flashMode) {
+        imageCapture?.flashMode = flashMode
+    }
 
     Scaffold(
         topBar = {
@@ -99,11 +124,35 @@ fun CameraScreen(
                     }
                 },
                 actions = {
-                    androidx.compose.material3.TextButton(onClick = { burstMode = !burstMode }) {
+                    IconButton(onClick = {
+                        flashMode = when (flashMode) {
+                            ImageCapture.FLASH_MODE_OFF -> ImageCapture.FLASH_MODE_AUTO
+                            ImageCapture.FLASH_MODE_AUTO -> ImageCapture.FLASH_MODE_ON
+                            else -> ImageCapture.FLASH_MODE_OFF
+                        }
+                    }) {
+                        Icon(
+                            when (flashMode) {
+                                ImageCapture.FLASH_MODE_ON -> Icons.Outlined.FlashOn
+                                ImageCapture.FLASH_MODE_AUTO -> Icons.Outlined.FlashAuto
+                                else -> Icons.Outlined.FlashOff
+                            },
+                            contentDescription = "闪光灯",
+                            tint = Color.White
+                        )
+                    }
+                    IconButton(onClick = { showGrid = !showGrid }) {
+                        Icon(
+                            Icons.Outlined.GridOn,
+                            contentDescription = "网格",
+                            tint = if (showGrid) Color.White else Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                    TextButton(onClick = { burstMode = !burstMode }) {
                         Text(if (burstMode) "单拍" else "连拍", color = Color.White)
                     }
                     if (burstMode && burstUris.isNotEmpty()) {
-                        androidx.compose.material3.TextButton(onClick = { onBurstDone(burstUris) }) {
+                        TextButton(onClick = { onBurstDone(burstUris) }) {
                             Text("完成", color = Color.White)
                         }
                     }
@@ -125,18 +174,38 @@ fun CameraScreen(
                 .padding(padding)
         ) {
             if (cameraPermission.status.isGranted) {
-                AndroidView(
-                    modifier = Modifier.fillMaxSize(),
-                    factory = { ctx ->
-                        val view = PreviewView(ctx).apply {
-                            scaleType = PreviewView.ScaleType.FILL_CENTER
+                key(lensFacing) {
+                    AndroidView(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .pointerInput(camera, previewView) {
+                                detectTapGestures { offset ->
+                                    val cam = camera ?: return@detectTapGestures
+                                    val pv = previewView ?: return@detectTapGestures
+                                    val point = pv.meteringPointFactory.createPoint(offset.x, offset.y)
+                                    runCatching {
+                                        cam.cameraControl.startFocusAndMetering(
+                                            FocusMeteringAction.Builder(point).build()
+                                        )
+                                    }
+                                }
+                            },
+                        factory = { ctx ->
+                            val view = PreviewView(ctx).apply {
+                                scaleType = PreviewView.ScaleType.FILL_CENTER
+                            }
+                            previewView = view
+                            bindCamera(ctx, view, lifecycleOwner, lensFacing) { cam, capture ->
+                                camera = cam
+                                imageCapture = capture
+                            }
+                            view
                         }
-                        bindCamera(ctx, view, lifecycleOwner) { capture ->
-                            imageCapture = capture
-                        }
-                        view
-                    }
-                )
+                    )
+                }
+                if (showGrid) {
+                    CameraGrid(modifier = Modifier.fillMaxSize())
+                }
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
@@ -169,7 +238,7 @@ fun CameraScreen(
                     val capture = imageCapture ?: return@ShutterButton
                     val outFile = File(
                         context.cacheDir,
-                        "tmp/cap_${SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())}.jpg"
+                        "tmp/cap_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.jpg"
                     ).also { it.parentFile?.mkdirs() }
                     val opts = ImageCapture.OutputFileOptions.Builder(outFile).build()
                     capture.takePicture(
@@ -191,8 +260,35 @@ fun CameraScreen(
                     )
                 }
 
-                Spacer(Modifier.size(40.dp))
+                IconButton(onClick = {
+                    lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                        CameraSelector.LENS_FACING_FRONT
+                    } else {
+                        CameraSelector.LENS_FACING_BACK
+                    }
+                }) {
+                    Icon(
+                        imageVector = Icons.Outlined.Cameraswitch,
+                        contentDescription = "切换摄像头",
+                        tint = Color.White,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
+        }
+    }
+}
+
+@Composable
+private fun CameraGrid(modifier: Modifier = Modifier) {
+    Canvas(modifier = modifier) {
+        val color = Color.White.copy(alpha = 0.35f)
+        val stroke = 1.dp.toPx()
+        for (i in 1..2) {
+            val x = size.width * i / 3f
+            drawLine(color, Offset(x, 0f), Offset(x, size.height), strokeWidth = stroke)
+            val y = size.height * i / 3f
+            drawLine(color, Offset(0f, y), Offset(size.width, y), strokeWidth = stroke)
         }
     }
 }
@@ -224,7 +320,8 @@ private fun bindCamera(
     context: Context,
     previewView: PreviewView,
     lifecycleOwner: LifecycleOwner,
-    onCaptureReady: (ImageCapture) -> Unit
+    lensFacing: Int,
+    onReady: (Camera, ImageCapture) -> Unit
 ) {
     val providerFuture = ProcessCameraProvider.getInstance(context)
     providerFuture.addListener({
@@ -235,11 +332,13 @@ private fun bindCamera(
         val capture = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .build()
-        val selector = CameraSelector.DEFAULT_BACK_CAMERA
+        val selector = CameraSelector.Builder()
+            .requireLensFacing(lensFacing)
+            .build()
         runCatching {
             provider.unbindAll()
-            provider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
-            onCaptureReady(capture)
+            val camera = provider.bindToLifecycle(lifecycleOwner, selector, preview, capture)
+            onReady(camera, capture)
         }
     }, ContextCompat.getMainExecutor(context))
 }

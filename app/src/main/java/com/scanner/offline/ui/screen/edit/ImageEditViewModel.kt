@@ -28,12 +28,18 @@ import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
-enum class ImageEditMode { CROP, FLIP, MARK }
+import android.graphics.PointF
+import com.scanner.offline.domain.model.CropStyle
+import com.scanner.offline.domain.model.RedactStyle
+import com.scanner.offline.engine.image.EdgeDetector
+
+enum class ImageEditMode { CROP, FLIP, MARK, REDACT }
 
 @HiltViewModel
 class ImageEditViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val transform: ImageTransform,
+    private val edgeDetector: EdgeDetector,
     private val saveEdited: SaveEditedImageUseCase,
     private val updatePage: UpdatePageImageUseCase
 ) : ViewModel() {
@@ -64,21 +70,101 @@ class ImageEditViewModel @Inject constructor(
                 _state.update { it.copy(loading = false, error = "无法读取图片") }
                 return@launch
             }
-            recycleWorkingIfNeeded(keepOriginal = false)
             original = bmp
-            val aspect = bmp.width.toFloat() / bmp.height
+            val aspect = bmp.width.toFloat() / bmp.height.coerceAtLeast(1)
+            val workingBmp = runCatching { bmp.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: bmp
+            val corners = withContext(Dispatchers.Default) { edgeDetector.detect(workingBmp) }
             _state.update {
                 it.copy(
                     loading = false,
-                    working = bmp.copy(bmp.config ?: Bitmap.Config.ARGB_8888, false),
+                    working = workingBmp,
                     imageAspect = aspect,
                     cropRect = NormalizedCropRect.inset(),
+                    cropStyle = CropStyle.RECTANGLE,
+                    perspectiveCorners = corners,
+                    freeformPoints = emptyList(),
                     dirty = false,
                     lastResult = null,
                     strokes = emptyList()
                 )
             }
         }
+    }
+
+    fun setCropStyle(style: CropStyle) {
+        val cur = _state.value
+        if (style == CropStyle.PERSPECTIVE && cur.perspectiveCorners.size != 4) {
+            val bmp = cur.working
+            val corners = if (bmp != null) edgeDetector.detect(bmp) else defaultCorners()
+            _state.update { it.copy(cropStyle = style, perspectiveCorners = corners) }
+        } else {
+            _state.update { it.copy(cropStyle = style) }
+        }
+    }
+
+    fun detectPerspectiveCorners() {
+        val bmp = _state.value.working ?: return
+        viewModelScope.launch {
+            val corners = withContext(Dispatchers.Default) { edgeDetector.detect(bmp) }
+            _state.update { it.copy(perspectiveCorners = corners) }
+        }
+    }
+
+    fun resetPerspectiveToFull() {
+        _state.update {
+            it.copy(
+                perspectiveCorners = listOf(
+                    PointF(0f, 0f),
+                    PointF(1f, 0f),
+                    PointF(1f, 1f),
+                    PointF(0f, 1f)
+                )
+            )
+        }
+    }
+
+    fun updatePerspectiveCorner(index: Int, point: PointF) {
+        val cur = _state.value
+        if (index !in cur.perspectiveCorners.indices) return
+        val newPts = cur.perspectiveCorners.toMutableList()
+        newPts[index] = PointF(point.x.coerceIn(0f, 1f), point.y.coerceIn(0f, 1f))
+        _state.update { it.copy(perspectiveCorners = newPts) }
+    }
+
+    fun movePerspectiveEdge(edgeIndex: Int, dx: Float, dy: Float) {
+        val cur = _state.value
+        if (cur.perspectiveCorners.size != 4) return
+        val i1 = edgeIndex
+        val i2 = (edgeIndex + 1) % 4
+        val p1 = cur.perspectiveCorners[i1]
+        val p2 = cur.perspectiveCorners[i2]
+        val newPts = cur.perspectiveCorners.toMutableList()
+        newPts[i1] = PointF((p1.x + dx).coerceIn(0f, 1f), (p1.y + dy).coerceIn(0f, 1f))
+        newPts[i2] = PointF((p2.x + dx).coerceIn(0f, 1f), (p2.y + dy).coerceIn(0f, 1f))
+        _state.update { it.copy(perspectiveCorners = newPts) }
+    }
+
+    fun translatePerspective(dx: Float, dy: Float) {
+        val cur = _state.value
+        if (cur.perspectiveCorners.size != 4) return
+        val minX = cur.perspectiveCorners.minOf { it.x }
+        val maxX = cur.perspectiveCorners.maxOf { it.x }
+        val minY = cur.perspectiveCorners.minOf { it.y }
+        val maxY = cur.perspectiveCorners.maxOf { it.y }
+        val clampedDx = dx.coerceIn(-minX, 1f - maxX)
+        val clampedDy = dy.coerceIn(-minY, 1f - maxY)
+        val newPts = cur.perspectiveCorners.map {
+            PointF(it.x + clampedDx, it.y + clampedDy)
+        }
+        _state.update { it.copy(perspectiveCorners = newPts) }
+    }
+
+    fun setFreeformPoints(points: List<PointF>) {
+        _state.update { it.copy(freeformPoints = points) }
+    }
+
+    fun clearFreeformPoints() {
+        _state.update { it.copy(freeformPoints = emptyList()) }
     }
 
     fun setCropAspect(aspect: CropAspect) {
@@ -114,19 +200,55 @@ class ImageEditViewModel @Inject constructor(
         }
     }
 
+    fun moveCropEdge(edgeIndex: Int, pos: Float) {
+        val cur = _state.value
+        _state.update {
+            it.copy(
+                cropRect = cur.cropRect.moveEdge(edgeIndex, pos, cur.imageAspect, cur.cropAspect)
+            )
+        }
+    }
+
+    fun translateCrop(deltaX: Float, deltaY: Float) {
+        _state.update {
+            it.copy(cropRect = it.cropRect.translate(deltaX, deltaY))
+        }
+    }
+
     fun applyCrop() {
         val cur = _state.value
         val src = cur.working ?: return
-        if (cur.cropRect.isFull) return
         viewModelScope.launch {
-            val cropped = withContext(Dispatchers.Default) { transform.crop(src, cur.cropRect) }
-            if (src !== original && src !== cropped) src.recycle()
-            val aspect = cropped.width.toFloat() / cropped.height
+            val cropped = withContext(Dispatchers.Default) {
+                when (cur.cropStyle) {
+                    CropStyle.RECTANGLE -> {
+                        if (cur.cropRect.isFull) src else transform.crop(src, cur.cropRect)
+                    }
+                    CropStyle.PERSPECTIVE -> {
+                        if (cur.perspectiveCorners.size == 4) {
+                            transform.perspectiveCrop(src, cur.perspectiveCorners)
+                        } else src
+                    }
+                    CropStyle.FREEFORM -> {
+                        if (cur.freeformPoints.size >= 3) {
+                            val transparent = cur.format == ExportFormat.PNG
+                            transform.freeformCrop(src, cur.freeformPoints, transparent)
+                        } else src
+                    }
+                }
+            }
+            if (cropped === src) return@launch
+            val aspect = cropped.width.toFloat() / cropped.height.coerceAtLeast(1)
+            val newCorners = withContext(Dispatchers.Default) { edgeDetector.detect(cropped) }
             _state.update {
                 it.copy(
                     working = cropped,
                     imageAspect = aspect,
                     cropRect = NormalizedCropRect.full(),
+                    perspectiveCorners = newCorners,
+                    freeformPoints = emptyList(),
+                    redactRects = emptyList(),
+                    strokes = emptyList(),
                     dirty = true
                 )
             }
@@ -196,22 +318,54 @@ class ImageEditViewModel @Inject constructor(
         _state.update { it.copy(strokes = emptyList()) }
     }
 
+    fun setRedactStyle(style: RedactStyle) {
+        _state.update { it.copy(redactStyle = style) }
+    }
+
+    fun addRedactRect(rect: NormalizedCropRect) {
+        if (rect.width < 0.01f || rect.height < 0.01f) return
+        _state.update { it.copy(redactRects = it.redactRects + rect.coerced(0.02f)) }
+    }
+
+    fun undoRedactRect() {
+        _state.update {
+            if (it.redactRects.isEmpty()) it else it.copy(redactRects = it.redactRects.dropLast(1))
+        }
+    }
+
+    fun clearRedactRects() {
+        _state.update { it.copy(redactRects = emptyList()) }
+    }
+
+    fun applyRedaction() {
+        val cur = _state.value
+        if (cur.redactRects.isEmpty()) return
+        mutate { transform.redact(it, cur.redactRects, cur.redactStyle) }
+        _state.update { it.copy(redactRects = emptyList()) }
+    }
+
     fun reset() {
         val src = original ?: return
-        val cur = _state.value.working
-        if (cur != null && cur !== src && cur !== original) cur.recycle()
-        val aspect = src.width.toFloat() / src.height
-        _state.update {
-            it.copy(
-                working = src.copy(src.config ?: Bitmap.Config.ARGB_8888, false),
-                imageAspect = aspect,
-                cropRect = NormalizedCropRect.inset(),
-                dirty = false,
-                lastResult = null,
-                error = null,
-                strokes = emptyList(),
-                freeAngle = 0f
-            )
+        val aspect = src.width.toFloat() / src.height.coerceAtLeast(1)
+        val workingBmp = runCatching { src.copy(Bitmap.Config.ARGB_8888, false) }.getOrNull() ?: src
+        viewModelScope.launch {
+            val corners = withContext(Dispatchers.Default) { edgeDetector.detect(workingBmp) }
+            _state.update {
+                it.copy(
+                    working = workingBmp,
+                    imageAspect = aspect,
+                    cropRect = NormalizedCropRect.inset(),
+                    cropStyle = CropStyle.RECTANGLE,
+                    perspectiveCorners = corners,
+                    freeformPoints = emptyList(),
+                    dirty = false,
+                    lastResult = null,
+                    error = null,
+                    strokes = emptyList(),
+                    redactRects = emptyList(),
+                    freeAngle = 0f
+                )
+            }
         }
     }
 
@@ -222,15 +376,31 @@ class ImageEditViewModel @Inject constructor(
             _state.update { it.copy(saving = true, error = null) }
             runCatching {
                 withContext(Dispatchers.Default) {
-                    if (cur.mode == ImageEditMode.CROP && !cur.cropRect.isFull) {
-                        val cropped = transform.crop(bmp, cur.cropRect)
-                        if (bmp !== original && bmp !== cropped) bmp.recycle()
-                        bmp = cropped
+                    if (cur.mode == ImageEditMode.CROP) {
+                        when (cur.cropStyle) {
+                            CropStyle.RECTANGLE -> {
+                                if (!cur.cropRect.isFull) {
+                                    bmp = transform.crop(bmp, cur.cropRect)
+                                }
+                            }
+                            CropStyle.PERSPECTIVE -> {
+                                if (cur.perspectiveCorners.size == 4) {
+                                    bmp = transform.perspectiveCrop(bmp, cur.perspectiveCorners)
+                                }
+                            }
+                            CropStyle.FREEFORM -> {
+                                if (cur.freeformPoints.size >= 3) {
+                                    val transparent = cur.format == ExportFormat.PNG
+                                    bmp = transform.freeformCrop(bmp, cur.freeformPoints, transparent)
+                                }
+                            }
+                        }
                     }
                     if (cur.strokes.isNotEmpty()) {
-                        val baked = transform.bakeStrokes(bmp, cur.strokes)
-                        if (bmp !== original && bmp !== baked) bmp.recycle()
-                        bmp = baked
+                        bmp = transform.bakeStrokes(bmp, cur.strokes)
+                    }
+                    if (cur.redactRects.isNotEmpty()) {
+                        bmp = transform.redact(bmp, cur.redactRects, cur.redactStyle)
                     }
                     val pid = pageId
                     if (pid != null) {
@@ -244,9 +414,11 @@ class ImageEditViewModel @Inject constructor(
                         saving = false,
                         working = bmp,
                         cropRect = NormalizedCropRect.full(),
+                        freeformPoints = emptyList(),
                         dirty = true,
                         lastResult = result,
-                        strokes = emptyList()
+                        strokes = emptyList(),
+                        redactRects = emptyList()
                     )
                 }
             }.onFailure { e ->
@@ -255,27 +427,31 @@ class ImageEditViewModel @Inject constructor(
         }
     }
 
-    override fun onCleared() {
-        recycleWorkingIfNeeded(keepOriginal = false)
-        super.onCleared()
+    private fun defaultCorners(): List<PointF> {
+        val inset = 0.05f
+        return listOf(
+            PointF(inset, inset),
+            PointF(1f - inset, inset),
+            PointF(1f - inset, 1f - inset),
+            PointF(inset, 1f - inset)
+        )
     }
 
     private fun mutate(block: (Bitmap) -> Bitmap) {
         val src = _state.value.working ?: return
         viewModelScope.launch {
             val out = withContext(Dispatchers.Default) { block(src) }
-            if (src !== original && src !== out) src.recycle()
             val aspect = out.width.toFloat() / out.height.coerceAtLeast(1)
-            _state.update { it.copy(working = out, dirty = true, imageAspect = aspect) }
-        }
-    }
-
-    private fun recycleWorkingIfNeeded(keepOriginal: Boolean) {
-        val working = _state.value.working
-        if (working != null && working !== original) working.recycle()
-        if (!keepOriginal) {
-            original?.recycle()
-            original = null
+            _state.update {
+                it.copy(
+                    working = out,
+                    dirty = true,
+                    imageAspect = aspect,
+                    // 图像几何变化后，旧的打码框/批注坐标已失效，清空避免误用
+                    redactRects = emptyList(),
+                    strokes = emptyList()
+                )
+            }
         }
     }
 
@@ -297,6 +473,9 @@ data class ImageEditUiState(
     val imageAspect: Float = 1f,
     val cropRect: NormalizedCropRect = NormalizedCropRect.inset(),
     val cropAspect: CropAspect = CropAspect.FREE,
+    val cropStyle: CropStyle = CropStyle.RECTANGLE,
+    val perspectiveCorners: List<PointF> = emptyList(),
+    val freeformPoints: List<PointF> = emptyList(),
     val format: ExportFormat = ExportFormat.JPG,
     val quality: Int = 92,
     val mode: ImageEditMode = ImageEditMode.CROP,
@@ -304,6 +483,8 @@ data class ImageEditUiState(
     val watermark: String = "",
     val watermarkPos: WatermarkPosition = WatermarkPosition.BOTTOM_RIGHT,
     val strokes: List<List<Pair<Float, Float>>> = emptyList(),
+    val redactRects: List<NormalizedCropRect> = emptyList(),
+    val redactStyle: RedactStyle = RedactStyle.BLACK,
     val dirty: Boolean = false,
     val lastResult: ExportResult? = null,
     val error: String? = null

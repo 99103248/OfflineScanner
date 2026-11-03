@@ -6,6 +6,10 @@ import android.graphics.Color
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PointF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import com.scanner.offline.domain.model.RedactStyle
 import com.scanner.offline.domain.model.WatermarkPosition
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -15,19 +19,99 @@ import kotlin.math.max
 import kotlin.math.sin
 
 /**
- * 矩形裁剪 / 翻转 / 旋转 / 水印 / 批注。全部在本地 Bitmap 上完成。
+ * 矩形裁剪 / 透视拉平 / 自由套索 / 翻转 / 旋转 / 水印 / 批注。全部在本地 Bitmap 上完成。
  */
 @Singleton
-class ImageTransform @Inject constructor() {
+class ImageTransform @Inject constructor(
+    private val perspectiveCorrector: PerspectiveCorrector
+) {
+
+    constructor() : this(PerspectiveCorrector())
 
     fun crop(source: Bitmap, rect: NormalizedCropRect): Bitmap {
         val px = rect.toPixels(source.width, source.height)
-        if (px.left == 0 && px.top == 0 &&
-            px.width == source.width && px.height == source.height
+        val safeLeft = px.left.coerceIn(0, source.width - 1)
+        val safeTop = px.top.coerceIn(0, source.height - 1)
+        val safeWidth = px.width.coerceIn(1, source.width - safeLeft)
+        val safeHeight = px.height.coerceIn(1, source.height - safeTop)
+        if (safeLeft == 0 && safeTop == 0 &&
+            safeWidth == source.width && safeHeight == source.height
         ) {
             return source.copy(source.config ?: Bitmap.Config.ARGB_8888, false)
         }
-        return Bitmap.createBitmap(source, px.left, px.top, px.width, px.height)
+        return Bitmap.createBitmap(source, safeLeft, safeTop, safeWidth, safeHeight)
+    }
+
+    /**
+     * 四角透视拉平裁剪（CamScanner 风格）。
+     * @param corners 4 个归一化角点，顺序：左上、右上、右下、左下
+     */
+    fun perspectiveCrop(source: Bitmap, corners: List<PointF>): Bitmap {
+        if (corners.size != 4) {
+            return source.copy(source.config ?: Bitmap.Config.ARGB_8888, false)
+        }
+        val corrected = perspectiveCorrector.correct(source, corners)
+        return perspectiveCorrector.clamp(corrected, 2400)
+    }
+
+    /**
+     * 手绘套索自由裁剪（任意闭合多边形）。
+     * @param normalizedPoints 归一化手绘轮廓点序列
+     * @param transparentBg 是否保留透明背景（PNG 为 true，JPG/其他为 false 用白色填充）
+     * @param fillColor 非透明背景下的填充颜色（默认白色）
+     */
+    fun freeformCrop(
+        source: Bitmap,
+        normalizedPoints: List<PointF>,
+        transparentBg: Boolean = false,
+        fillColor: Int = Color.WHITE
+    ): Bitmap {
+        if (normalizedPoints.size < 3) {
+            return source.copy(source.config ?: Bitmap.Config.ARGB_8888, false)
+        }
+        val w = source.width.toFloat()
+        val h = source.height.toFloat()
+        val pixelPoints = normalizedPoints.map { PointF(it.x * w, it.y * h) }
+        val minX = pixelPoints.minOf { it.x }.coerceIn(0f, w - 1f)
+        val maxX = pixelPoints.maxOf { it.x }.coerceIn(minX + 1f, w)
+        val minY = pixelPoints.minOf { it.y }.coerceIn(0f, h - 1f)
+        val maxY = pixelPoints.maxOf { it.y }.coerceIn(minY + 1f, h)
+
+        val outW = (maxX - minX).toInt().coerceAtLeast(1)
+        val outH = (maxY - minY).toInt().coerceAtLeast(1)
+
+        val masked = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val maskCanvas = Canvas(masked)
+
+        val path = Path().apply {
+            moveTo(pixelPoints.first().x - minX, pixelPoints.first().y - minY)
+            for (i in 1 until pixelPoints.size) {
+                lineTo(pixelPoints[i].x - minX, pixelPoints[i].y - minY)
+            }
+            close()
+        }
+
+        val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            style = Paint.Style.FILL
+        }
+        maskCanvas.drawPath(path, maskPaint)
+
+        val photoPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply {
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_IN)
+        }
+        maskCanvas.drawBitmap(source, -minX, -minY, photoPaint)
+
+        if (transparentBg) {
+            return masked
+        }
+
+        val filledOut = Bitmap.createBitmap(outW, outH, Bitmap.Config.ARGB_8888)
+        val filledCanvas = Canvas(filledOut)
+        filledCanvas.drawColor(fillColor)
+        filledCanvas.drawBitmap(masked, 0f, 0f, Paint(Paint.FILTER_BITMAP_FLAG))
+        masked.recycle()
+        return filledOut
     }
 
     fun flipHorizontal(source: Bitmap): Bitmap = transform(source, Matrix().apply { preScale(-1f, 1f) })
@@ -99,8 +183,45 @@ class ImageTransform @Inject constructor() {
         return out
     }
 
-    fun bakeStrokes(source: Bitmap, strokes: List<List<Pair<Float, Float>>>, color: Int = Color.RED, strokeWidth: Float = 8f): Bitmap {
+    /**
+     * 打码脱敏：把若干归一化矩形涂黑或马赛克。
+     */
+    fun redact(
+        source: Bitmap,
+        rects: List<NormalizedCropRect>,
+        style: RedactStyle,
+        blockSize: Int = 18
+    ): Bitmap {
         val out = source.copy(Bitmap.Config.ARGB_8888, true)
+        if (rects.isEmpty()) return out
+        val canvas = Canvas(out)
+        val blackPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.BLACK }
+        rects.forEach { rect ->
+            if (rect.width <= 0f || rect.height <= 0f) return@forEach
+            val p = rect.toPixels(out.width, out.height)
+            if (p.width <= 0 || p.height <= 0) return@forEach
+            when (style) {
+                RedactStyle.BLACK -> canvas.drawRect(
+                    p.left.toFloat(), p.top.toFloat(),
+                    p.right.toFloat(), p.bottom.toFloat(), blackPaint
+                )
+                RedactStyle.MOSAIC -> {
+                    val region = Bitmap.createBitmap(source, p.left, p.top, p.width, p.height)
+                    val smallW = (p.width / blockSize).coerceAtLeast(1)
+                    val smallH = (p.height / blockSize).coerceAtLeast(1)
+                    val small = Bitmap.createScaledBitmap(region, smallW, smallH, false)
+                    val mosaic = Bitmap.createScaledBitmap(small, p.width, p.height, false)
+                    canvas.drawBitmap(mosaic, p.left.toFloat(), p.top.toFloat(), null)
+                    if (small !== region) small.recycle()
+                    if (mosaic !== small) mosaic.recycle()
+                    region.recycle()
+                }
+            }
+        }
+        return out
+    }
+
+    fun bakeStrokes(source: Bitmap, strokes: List<List<Pair<Float, Float>>>, color: Int = Color.RED, strokeWidth: Float = 8f): Bitmap {        val out = source.copy(Bitmap.Config.ARGB_8888, true)
         if (strokes.isEmpty()) return out
         val canvas = Canvas(out)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {

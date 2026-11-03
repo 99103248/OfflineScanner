@@ -49,6 +49,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun FilterScreen(
     imagePath: String,
+    docId: Long? = null,
     onSaved: (Long) -> Unit,
     onBack: () -> Unit,
     viewModel: FilterViewModel = hiltViewModel()
@@ -68,6 +69,7 @@ fun FilterScreen(
                 actions = {
                     IconButton(onClick = {
                         viewModel.save(
+                            docId = docId,
                             onDone = onSaved,
                             onError = { msg ->
                                 scope.launch { snackbarHostState.showSnackbar(msg) }

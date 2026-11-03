@@ -76,8 +76,9 @@ fun BarcodeScreen(onBack: () -> Unit, viewModel: BarcodeViewModel = hiltViewMode
     val scope = rememberCoroutineScope()
     var hits by remember { mutableStateOf<List<BarcodeHit>>(emptyList()) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        uri?.toString()?.let { u ->
-            viewModel.scan(u,
+        uri?.let { u ->
+            val path = com.scanner.offline.util.UriUtils.copyUriToCache(context, u) ?: u.toString()
+            viewModel.scan(path,
                 onDone = { hits = it; if (it.isEmpty()) scope.launch { snack.showSnackbar("未识别到条码") } },
                 onError = { scope.launch { snack.showSnackbar(it) } })
         }

@@ -86,6 +86,52 @@ data class NormalizedCropRect(
     }
 
     /**
+     * 平移整个矩形，位移量受限于 [0, 1] 边界，矩形尺寸保持不变。
+     */
+    fun translate(deltaX: Float, deltaY: Float): NormalizedCropRect {
+        val clampedDx = deltaX.coerceIn(-left, 1f - right)
+        val clampedDy = deltaY.coerceIn(-top, 1f - bottom)
+        return copy(
+            left = left + clampedDx,
+            top = top + clampedDy,
+            right = right + clampedDx,
+            bottom = bottom + clampedDy
+        )
+    }
+
+    /**
+     * 移动某一条边：0 顶边, 1 右边, 2 底边, 3 左边。
+     * pos 为该边在归一化坐标系下的新位置（顶/底为 Y，左/右为 X）。
+     */
+    fun moveEdge(
+        edgeIndex: Int,
+        pos: Float,
+        imageAspect: Float = 1f,
+        cropAspect: CropAspect = CropAspect.FREE
+    ): NormalizedCropRect {
+        val freeRect = when (edgeIndex) {
+            0 -> copy(top = pos.coerceIn(0f, bottom - MIN_SIZE))
+            1 -> copy(right = pos.coerceIn(left + MIN_SIZE, 1f))
+            2 -> copy(bottom = pos.coerceIn(top + MIN_SIZE, 1f))
+            3 -> copy(left = pos.coerceIn(0f, right - MIN_SIZE))
+            else -> this
+        }.coerced()
+
+        if (cropAspect == CropAspect.FREE || cropAspect.widthOverHeight == null) {
+            return freeRect
+        }
+
+        val anchorCorner = when (edgeIndex) {
+            0 -> 2 // 移动顶边，锚定底角
+            1 -> 3 // 移动右边，锚定左角
+            2 -> 0 // 移动底边，锚定顶角
+            3 -> 1 // 移动左边，锚定右角
+            else -> 0
+        }
+        return freeRect.withAspect(cropAspect, imageAspect, anchorCorner)
+    }
+
+    /**
      * 按像素宽高比调整矩形。anchor 为保持不动的角：0 左上 … 3 左下。
      */
     fun withAspect(

@@ -47,19 +47,23 @@ class PaddleOcrEngine @Inject constructor(
     /** 总开关：构造失败（极端情况）时降级 */
     val isEnabled: Boolean get() = ocr != null
 
-    private var ocr: RapidOCR? = null
-
-    /** 串行化推理调用 */
-    private val mutex = Mutex()
-
-    init {
-        ocr = runCatching {
+    /**
+     * 懒加载：RapidOCR 要加载 ~15MB 模型 + ONNX Runtime，
+     * 不能在构造时（可能发生在 App 启动主线程）同步执行。
+     * 只有真正调用识别时才会初始化。
+     */
+    private val ocr: RapidOCR? by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        runCatching {
             RapidOCR.create(context)
         }.onFailure {
             Log.e(TAG, "RapidOCR 初始化失败：${it.message}", it)
+        }.onSuccess {
+            Log.i(TAG, "RapidOCR 初始化成功")
         }.getOrNull()
-        Log.i(TAG, "RapidOCR 初始化 ${if (ocr != null) "成功" else "失败"}")
     }
+
+    /** 串行化推理调用 */
+    private val mutex = Mutex()
 
     override suspend fun recognize(bitmap: Bitmap, language: Language): OcrResult =
         withContext(Dispatchers.Default) {

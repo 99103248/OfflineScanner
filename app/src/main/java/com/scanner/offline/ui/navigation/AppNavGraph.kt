@@ -19,10 +19,13 @@ import com.scanner.offline.ui.screen.export.ExportScreen
 import com.scanner.offline.ui.screen.export.FormatConvertScreen
 import com.scanner.offline.ui.screen.filter.FilterScreen
 import com.scanner.offline.ui.screen.home.HomeScreen
+import com.scanner.offline.ui.screen.home.TrashScreen
 import com.scanner.offline.ui.screen.me.MeScreen
 import com.scanner.offline.ui.screen.ocr.OcrScreen
+import com.scanner.offline.ui.screen.settings.SettingsScreen
 import com.scanner.offline.ui.screen.tools.BarcodeScreen
 import com.scanner.offline.ui.screen.tools.BatchEditScreen
+import com.scanner.offline.ui.screen.tools.IdCardScreen
 import com.scanner.offline.ui.screen.tools.PdfToolScreen
 import com.scanner.offline.ui.screen.tools.StitchScreen
 import com.scanner.offline.ui.screen.tools.ToolsScreen
@@ -40,15 +43,16 @@ fun AppNavGraph(
     ) {
         composable(TopRoute.Home.path) {
             HomeScreen(
-                onScanClick = { navController.navigate(AppRoute.Camera.path) },
+                onScanClick = { navController.navigate(AppRoute.Camera.create()) },
                 onDocumentClick = { docId ->
                     navController.navigate(AppRoute.DocumentDetail.create(docId))
-                }
+                },
+                onTrashClick = { navController.navigate(AppRoute.Trash.path) }
             )
         }
         composable(TopRoute.Tools.path) {
             ToolsScreen(
-                onScanClick = { navController.navigate(AppRoute.Camera.path) },
+                onScanClick = { navController.navigate(AppRoute.Camera.create()) },
                 onPickImageForOcr = { uri ->
                     navController.navigate(AppRoute.Crop.create(uri))
                 },
@@ -59,18 +63,23 @@ fun AppNavGraph(
                 onBatchClick = { navController.navigate(AppRoute.Batch.path) },
                 onStitchClick = { navController.navigate(AppRoute.Stitch.path) },
                 onPdfToolsClick = { navController.navigate(AppRoute.PdfTools.path) },
-                onBarcodeClick = { navController.navigate(AppRoute.Barcode.path) }
+                onBarcodeClick = { navController.navigate(AppRoute.Barcode.path) },
+                onIdCardClick = { navController.navigate(AppRoute.IdCard.path) }
             )
         }
         composable(TopRoute.Me.path) {
-            MeScreen()
+            MeScreen(onSettingsClick = { navController.navigate(AppRoute.Settings.path) })
         }
 
-        composable(AppRoute.Camera.path) {
+        composable(
+            route = AppRoute.Camera.path,
+            arguments = listOf(navArgument("docId") { type = NavType.LongType; defaultValue = -1L })
+        ) { backStackEntry ->
+            val docId = backStackEntry.arguments?.getLong("docId") ?: -1L
             val sessionVm: ScanSessionViewModel = hiltViewModel()
             CameraScreen(
                 onCaptured = { uri ->
-                    navController.navigate(AppRoute.Crop.create(uri)) {
+                    navController.navigate(AppRoute.Crop.create(uri, docId.takeIf { it >= 0 })) {
                         popUpTo(AppRoute.Camera.path) { inclusive = true }
                     }
                 },
@@ -87,15 +96,16 @@ fun AppNavGraph(
         composable(
             route = AppRoute.Crop.path,
             arguments = listOf(
-                navArgument("imageUri") { type = NavType.StringType; defaultValue = "" }
+                navArgument("imageUri") { type = NavType.StringType; defaultValue = "" },
+                navArgument("docId") { type = NavType.LongType; defaultValue = -1L }
             )
         ) { backStackEntry ->
-            val raw = backStackEntry.arguments?.getString("imageUri").orEmpty()
-            val uri = URLDecoder.decode(raw, "UTF-8")
+            val uri = backStackEntry.arguments?.getString("imageUri").orEmpty()
+            val docId = backStackEntry.arguments?.getLong("docId") ?: -1L
             CropScreen(
                 imageUri = uri,
                 onCropped = { processedPath ->
-                    navController.navigate(AppRoute.Filter.create(processedPath))
+                    navController.navigate(AppRoute.Filter.create(processedPath, docId.takeIf { it >= 0 }))
                 },
                 onBack = { navController.popBackStack() }
             )
@@ -104,15 +114,17 @@ fun AppNavGraph(
         composable(
             route = AppRoute.Filter.path,
             arguments = listOf(
-                navArgument("imagePath") { type = NavType.StringType; defaultValue = "" }
+                navArgument("imagePath") { type = NavType.StringType; defaultValue = "" },
+                navArgument("docId") { type = NavType.LongType; defaultValue = -1L }
             )
         ) { backStackEntry ->
-            val raw = backStackEntry.arguments?.getString("imagePath").orEmpty()
-            val path = java.net.URLDecoder.decode(raw, "UTF-8")
+            val path = backStackEntry.arguments?.getString("imagePath").orEmpty()
+            val docId = backStackEntry.arguments?.getLong("docId") ?: -1L
             FilterScreen(
                 imagePath = path,
-                onSaved = { docId ->
-                    navController.navigate(AppRoute.DocumentDetail.create(docId)) {
+                docId = docId.takeIf { it >= 0 },
+                onSaved = { savedDocId ->
+                    navController.navigate(AppRoute.DocumentDetail.create(savedDocId)) {
                         popUpTo(TopRoute.Home.path)
                     }
                 },
@@ -128,8 +140,7 @@ fun AppNavGraph(
                 navArgument("pageId") { type = NavType.LongType; defaultValue = -1L }
             )
         ) { backStackEntry ->
-            val raw = backStackEntry.arguments?.getString("imagePath").orEmpty()
-            val path = java.net.URLDecoder.decode(raw, "UTF-8")
+            val path = backStackEntry.arguments?.getString("imagePath").orEmpty()
             val docId = backStackEntry.arguments?.getLong("docId") ?: -1L
             val pageId = backStackEntry.arguments?.getLong("pageId") ?: -1L
             OcrScreen(
@@ -153,6 +164,9 @@ fun AppNavGraph(
                 },
                 onEditClick = { imagePath, pageId ->
                     navController.navigate(AppRoute.ImageEdit.create(imagePath, "crop", pageId))
+                },
+                onAddPageCamera = {
+                    navController.navigate(AppRoute.Camera.create(docId))
                 },
                 onBack = { navController.popBackStack() }
             )
@@ -181,13 +195,13 @@ fun AppNavGraph(
                 navArgument("pageId") { type = NavType.LongType; defaultValue = -1L }
             )
         ) { backStackEntry ->
-            val raw = backStackEntry.arguments?.getString("imageUri").orEmpty()
-            val uri = java.net.URLDecoder.decode(raw, "UTF-8")
+            val uri = backStackEntry.arguments?.getString("imageUri").orEmpty()
             val modeArg = backStackEntry.arguments?.getString("mode").orEmpty()
             val pageId = backStackEntry.arguments?.getLong("pageId") ?: -1L
             val mode = when (modeArg.lowercase()) {
                 "flip" -> ImageEditMode.FLIP
                 "mark" -> ImageEditMode.MARK
+                "redact" -> ImageEditMode.REDACT
                 else -> ImageEditMode.CROP
             }
             ImageEditScreen(
@@ -219,6 +233,20 @@ fun AppNavGraph(
         }
         composable(AppRoute.Barcode.path) {
             BarcodeScreen(onBack = { navController.popBackStack() })
+        }
+        composable(AppRoute.IdCard.path) {
+            IdCardScreen(
+                onBack = { navController.popBackStack() },
+                onOpenDocument = { docId ->
+                    navController.navigate(AppRoute.DocumentDetail.create(docId))
+                }
+            )
+        }
+        composable(AppRoute.Trash.path) {
+            TrashScreen(onBack = { navController.popBackStack() })
+        }
+        composable(AppRoute.Settings.path) {
+            SettingsScreen(onBack = { navController.popBackStack() })
         }
     }
 }

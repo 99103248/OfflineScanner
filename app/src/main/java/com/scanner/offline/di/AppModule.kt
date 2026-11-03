@@ -2,6 +2,8 @@ package com.scanner.offline.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.scanner.offline.data.db.AppDatabase
 import com.scanner.offline.data.db.DocumentDao
 import com.scanner.offline.data.repository.DocumentRepositoryImpl
@@ -18,13 +20,25 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DatabaseModule {
 
+    /** v1 → v2：documents 表新增收藏与回收站字段（保留既有数据） */
+    private val MIGRATION_1_2: Migration = Migration1To2()
+
+    private class Migration1To2 : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "ALTER TABLE documents ADD COLUMN isFavorite INTEGER NOT NULL DEFAULT 0"
+            )
+            db.execSQL(
+                "ALTER TABLE documents ADD COLUMN deletedAt INTEGER"
+            )
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
         Room.databaseBuilder(ctx, AppDatabase::class.java, "scanner.db")
-            // Room 2.9 弃用了无参版本：必须显式说明无 schema 时是否清空所有表。
-            // 我们 schema 还在迭代期，还没生产用户数据需要保留 → true（drop all）
-            .fallbackToDestructiveMigration(dropAllTables = true)
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     @Provides

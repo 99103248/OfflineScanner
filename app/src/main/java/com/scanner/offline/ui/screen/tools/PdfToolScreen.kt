@@ -121,7 +121,7 @@ fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewMode
     var action by remember { mutableStateOf(PdfToolAction.MERGE) }
     var range by remember { mutableStateOf("1-1") }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { list ->
-        uris = list.map { it.toString() }
+        uris = list.mapNotNull { com.scanner.offline.util.UriUtils.copyUriToCache(context, it, "pdf") }
     }
     Scaffold(topBar = {
         TopAppBar(title = { Text("PDF 工具") }, navigationIcon = {

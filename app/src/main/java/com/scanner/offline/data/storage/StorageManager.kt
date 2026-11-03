@@ -34,7 +34,7 @@ class StorageManager @Inject constructor(
 
     /** 用户可访问到的默认导出目录：/Android/data/<package>/files/exports */
     val exportRoot: File =
-        File(context.getExternalFilesDir(null), "exports").apply { mkdirs() }
+        File(context.getExternalFilesDir(null) ?: context.filesDir, "exports").apply { mkdirs() }
 
     /** 临时目录，用于摄像头/裁剪等中间结果 */
     val cacheRoot: File =
@@ -86,25 +86,43 @@ class StorageManager @Inject constructor(
         if (customUri != null) {
             val tree = runCatching { DocumentFile.fromTreeUri(context, customUri) }.getOrNull()
             if (tree != null && tree.canWrite()) {
-                // SAF 的 createFile 会自动加后缀，所以这里 displayName 不带 ext
-                val target = tree.createFile(mimeType, safeName)
+                // SAF 的 createFile 在某些 provider 上会覆盖同名文件，
+                // 这里先探测并追加 _2 / _3，保证不覆盖历史导出。
+                var candidate = safeName
+                var index = 2
+                while (tree.findFile("$candidate.$extension") != null) {
+                    candidate = "${safeName}_$index"
+                    index++
+                }
+                // displayName 不带 ext，createFile 会自动加后缀
+                val target = tree.createFile(mimeType, candidate)
                 if (target != null) {
                     return ExportSink.Saf(
                         context = context,
                         documentFile = target,
-                        displayName = "${safeName}.$extension",
+                        displayName = "${candidate}.$extension",
                         humanLocation = describeSafLocation(tree, target)
                     )
                 }
             }
         }
-        // fallback：默认目录
-        val file = File(exportRoot, "$safeName.$extension")
+        // fallback：默认目录（同样避免覆盖）
+        val file = uniqueLocalFile(safeName, extension)
         return ExportSink.LocalFile(
             context = context,
             file = file,
             humanLocation = file.absolutePath
         )
+    }
+
+    private fun uniqueLocalFile(baseName: String, extension: String): File {
+        var candidate = File(exportRoot, "$baseName.$extension")
+        var index = 2
+        while (candidate.exists()) {
+            candidate = File(exportRoot, "${baseName}_$index.$extension")
+            index++
+        }
+        return candidate
     }
 
     private fun describeSafLocation(tree: DocumentFile, target: DocumentFile): String {

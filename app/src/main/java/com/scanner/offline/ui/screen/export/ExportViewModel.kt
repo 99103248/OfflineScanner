@@ -9,6 +9,7 @@ import com.scanner.offline.data.storage.StorageManager
 import com.scanner.offline.domain.model.ExportFormat
 import com.scanner.offline.domain.model.InputDocumentType
 import com.scanner.offline.domain.model.PdfImageLayout
+import com.scanner.offline.domain.model.PdfPaperSize
 import com.scanner.offline.domain.model.Language
 import com.scanner.offline.domain.usecase.ConvertFileToImagesUseCase
 import com.scanner.offline.domain.usecase.ConvertImageFormatUseCase
@@ -33,18 +34,43 @@ class ExportViewModel @Inject constructor(
     private val convertImage: ConvertImageFormatUseCase,
     private val convertFileToImages: ConvertFileToImagesUseCase,
     private val storage: StorageManager,
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val settings: com.scanner.offline.data.settings.SettingsRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(ExportUiState())
     val state: StateFlow<ExportUiState> = _state.asStateFlow()
 
-    fun export(docId: Long, format: ExportFormat) {
+    /** 设置页配置的默认纸张，用于初始化导出界面 */
+    val defaultPdfPaper: PdfPaperSize get() = settings.settings.value.pdfPaper
+
+    fun export(
+        docId: Long,
+        format: ExportFormat,
+        searchablePdf: Boolean = false,
+        pdfPaper: PdfPaperSize? = null,
+        pdfMaxImageDimension: Int? = null
+    ) {
+        val appSettings = settings.settings.value
         _state.value = _state.value.copy(running = true, error = null, lastResult = null, lastResults = emptyList())
         viewModelScope.launch {
-            runCatching { exportDocument(docId = docId, format = format, ocrLanguage = Language.AUTO) }
-                .onSuccess { r ->
-                    _state.value = _state.value.copy(running = false, lastResult = r, lastFormat = format)
+            runCatching {
+                exportDocument(
+                    docId = docId,
+                    format = format,
+                    ocrLanguage = Language.AUTO,
+                    searchablePdf = searchablePdf,
+                    pdfPaper = pdfPaper ?: appSettings.pdfPaper,
+                    pdfMaxImageDimension = pdfMaxImageDimension ?: appSettings.pdfMaxImageDimension
+                )
+            }
+                .onSuccess { results ->
+                    _state.value = _state.value.copy(
+                        running = false,
+                        lastResult = results.firstOrNull(),
+                        lastResults = results,
+                        lastFormat = format
+                    )
                 }
                 .onFailure { e ->
                     _state.value = _state.value.copy(running = false, error = e.message ?: "导出失败")

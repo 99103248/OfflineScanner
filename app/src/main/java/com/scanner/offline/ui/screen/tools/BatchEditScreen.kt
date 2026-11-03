@@ -103,10 +103,7 @@ fun BatchEditScreen(onBack: () -> Unit, viewModel: BatchEditViewModel = hiltView
     var quality by remember { mutableIntStateOf(80) }
     var running by remember { mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { list ->
-        list.forEach {
-            runCatching { context.contentResolver.takePersistableUriPermission(it, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION) }
-        }
-        uris = list.map { it.toString() }
+        uris = list.mapNotNull { com.scanner.offline.util.UriUtils.copyUriToCache(context, it) }
     }
     Scaffold(
         topBar = {
