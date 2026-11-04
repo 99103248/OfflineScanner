@@ -6,6 +6,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 This file is automatically maintained by [release-please](https://github.com/googleapis/release-please) — please do not edit it manually.
 
+## [1.3.0](https://github.com/99103248/OfflineScanner/compare/v1.2.0...v1.3.0) (2026-11-04)
+
+
+### Features
+
+* add offline crop ratios, burst scan, OCR edit, batch, PDF tools, and barcode. ([491f588](https://github.com/99103248/OfflineScanner/commit/491f5881f03e6fd67cfa0fcf031dedb2e7ac6bbc))
+* add rectangular crop and flip/save-as so users can edit photos locally without leaving the app. ([196fb8a](https://github.com/99103248/OfflineScanner/commit/196fb8a06ce3023e26248eac341696cec5390168))
+* optimize document workflow and add offline power features ([12414f9](https://github.com/99103248/OfflineScanner/commit/12414f93db6fe024720261a03e6ea43595a7bbeb))
+
+
+### Bug Fixes
+
+* use LocalResources for snackbar text to satisfy Compose lint ([b4ec80c](https://github.com/99103248/OfflineScanner/commit/b4ec80caf540cd0f0770936f103539e61d9eb575))
+
 ## [1.2.0](https://github.com/99103248/OfflineScanner/compare/v1.1.0...v1.2.0) (2026-05-20)
 
 ### Features
