@@ -69,6 +69,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.IntSize
@@ -103,13 +104,14 @@ fun ImageEditScreen(
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val resources = LocalResources.current
 
     LaunchedEffect(state.error) {
         state.error?.let { scope.launch { snackbar.showSnackbar(it) } }
     }
     LaunchedEffect(state.lastResult) {
         state.lastResult?.let {
-            scope.launch { snackbar.showSnackbar(context.getString(R.string.success_export, it.displayName)) }
+            scope.launch { snackbar.showSnackbar(resources.getString(R.string.success_export, it.displayName)) }
         }
     }
 
