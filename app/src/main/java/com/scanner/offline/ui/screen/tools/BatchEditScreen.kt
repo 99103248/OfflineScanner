@@ -54,7 +54,8 @@ import javax.inject.Inject
 class BatchEditViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val transform: ImageTransform,
-    private val saveEdited: SaveEditedImageUseCase
+    private val saveEdited: SaveEditedImageUseCase,
+    private val storage: com.scanner.offline.data.storage.StorageManager
 ) : ViewModel() {
     fun run(
         uris: List<String>,
@@ -70,11 +71,25 @@ class BatchEditViewModel @Inject constructor(
                 withContext(Dispatchers.IO) {
                     var n = 0
                     uris.forEach { u ->
-                        var bmp = decode(u) ?: return@forEach
-                        if (flipH) bmp = transform.flipHorizontal(bmp)
-                        if (rotate90) bmp = transform.rotate90Clockwise(bmp)
-                        saveEdited(bmp, format, Time.nowDocName("batch"), quality)
-                        n++
+                        val src = decode(u) ?: return@forEach
+                        var bmp = src
+                        try {
+                            if (flipH) {
+                                val next = transform.flipHorizontal(bmp)
+                                if (next !== bmp) bmp.recycle()
+                                bmp = next
+                            }
+                            if (rotate90) {
+                                val next = transform.rotate90Clockwise(bmp)
+                                if (next !== bmp) bmp.recycle()
+                                bmp = next
+                            }
+                            saveEdited(bmp, format, Time.nowDocName("batch"), quality)
+                            n++
+                        } finally {
+                            bmp.recycle()
+                            storage.deleteCacheFileIfTemp(u)
+                        }
                     }
                     n
                 }

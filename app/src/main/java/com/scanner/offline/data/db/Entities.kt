@@ -34,7 +34,8 @@ data class PageEntity(
     val processedPath: String,
     val thumbnailPath: String,
     val ocrText: String? = null,
-    val ocrLanguage: String? = null
+    val ocrLanguage: String? = null,
+    val ocrBlocksJson: String? = null
 )
 
 /**

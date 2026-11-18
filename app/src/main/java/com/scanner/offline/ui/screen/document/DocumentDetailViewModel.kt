@@ -9,6 +9,7 @@ import com.scanner.offline.domain.usecase.AppendImagesUseCase
 import com.scanner.offline.domain.usecase.RecognizeTextUseCase
 import com.scanner.offline.domain.usecase.RotatePageUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -27,9 +28,17 @@ class DocumentDetailViewModel @Inject constructor(
     private val _state = MutableStateFlow(DocumentDetailUiState())
     val state: StateFlow<DocumentDetailUiState> = _state.asStateFlow()
 
+    private var observeJob: Job? = null
+    private var observedDocId: Long? = null
+
     fun load(id: Long) {
-        viewModelScope.launch {
-            _state.update { it.copy(doc = repo.get(id)) }
+        if (observedDocId == id && observeJob?.isActive == true) return
+        observedDocId = id
+        observeJob?.cancel()
+        observeJob = viewModelScope.launch {
+            repo.observeDocument(id).collect { doc ->
+                _state.update { it.copy(doc = doc) }
+            }
         }
     }
 

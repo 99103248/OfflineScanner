@@ -2,12 +2,15 @@ package com.scanner.offline.domain.repository
 
 import com.scanner.offline.domain.model.Document
 import com.scanner.offline.domain.model.Page
+import com.scanner.offline.domain.model.TextBlock
 import kotlinx.coroutines.flow.Flow
 
 interface DocumentRepository {
     /** 文档库（未删除），支持按名称/OCR 全文搜索，收藏置顶 */
     fun observeAll(query: String = ""): Flow<List<Document>>
     fun observeTrashed(): Flow<List<Document>>
+    /** 响应式观察单个文档及其全部页面 */
+    fun observeDocument(id: Long): Flow<Document?>
     suspend fun get(id: Long): Document?
     suspend fun getPage(pageId: Long): Page?
     suspend fun create(name: String): Long
@@ -33,7 +36,12 @@ interface DocumentRepository {
     suspend fun createImported(name: String, createdAt: Long, updatedAt: Long, isFavorite: Boolean): Long
     /** 备份用：完整加载所有未删除文档（含页面） */
     suspend fun getAllForBackup(): List<Document>
-    suspend fun updatePageOcr(pageId: Long, text: String, langCode: String)
+    suspend fun updatePageOcr(
+        pageId: Long,
+        text: String,
+        langCode: String,
+        blocks: List<TextBlock> = emptyList()
+    )
     suspend fun updatePageImage(pageId: Long, processedPath: String, thumbnailPath: String)
     suspend fun deletePage(pageId: Long)
 }

@@ -3,6 +3,7 @@ package com.scanner.offline.ui.screen.ocr
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +18,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.Refresh
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -67,6 +69,14 @@ fun OcrScreen(
                 title = { Text(stringResource(R.string.tool_ocr)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
+                },
+                actions = {
+                    IconButton(
+                        onClick = { viewModel.run(state.language) },
+                        enabled = !state.running
+                    ) {
+                        Icon(Icons.Outlined.Refresh, contentDescription = "重新识别")
+                    }
                 }
             )
         },
@@ -79,7 +89,9 @@ fun OcrScreen(
                 .padding(16.dp)
         ) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -88,7 +100,8 @@ fun OcrScreen(
                     FilterChip(
                         selected = l == state.language,
                         onClick = { viewModel.run(l) },
-                        label = { Text(l.displayName) }
+                        label = { Text(l.displayName) },
+                        enabled = !state.running
                     )
                 }
             }
@@ -131,7 +144,9 @@ fun OcrScreen(
 
             val text = state.editedText
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
@@ -147,11 +162,20 @@ fun OcrScreen(
                 )
                 AssistChip(
                     onClick = {
-                        viewModel.saveEdits {
-                            scope.launch { snackbarHostState.showSnackbar("已保存校对") }
+                        viewModel.saveEdits { msg ->
+                            scope.launch { snackbarHostState.showSnackbar(msg) }
                         }
                     },
-                    label = { Text("保存校对") }
+                    label = { Text(if (state.isBoundToPage) "保存校对" else stringResource(R.string.ocr_export_txt)) }
+                )
+                AssistChip(
+                    onClick = {
+                        viewModel.exportWord(
+                            onDone = { scope.launch { snackbarHostState.showSnackbar("已导出 $it") } },
+                            onError = { scope.launch { snackbarHostState.showSnackbar(it) } }
+                        )
+                    },
+                    label = { Text("导出 Word") }
                 )
                 AssistChip(
                     onClick = {

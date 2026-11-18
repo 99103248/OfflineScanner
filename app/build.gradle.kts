@@ -90,6 +90,8 @@ android {
             )
             if (canSignRelease) {
                 signingConfig = signingConfigs.getByName("release")
+            } else if (System.getenv("CI") != "true") {
+                signingConfig = signingConfigs.getByName("debug")
             }
             // 没配 keystore 时 release APK 会是 unsigned；
             // CI 流程 (.github/workflows/release.yml) 的 verify 步骤会捕获并报错。

@@ -147,8 +147,8 @@ private fun CropEditor(
     val currentOnTranslate by rememberUpdatedState(onTranslate)
 
     // 记录当前拖动状态用于高亮视觉反馈
-    var activeCornerIndex by remember { mutableStateOf(-1) }
-    var activeEdgeIndex by remember { mutableStateOf(-1) }
+    var activeCornerIndex by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    var activeEdgeIndex by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
 
     Box(
         modifier = Modifier

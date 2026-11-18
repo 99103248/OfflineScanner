@@ -238,4 +238,38 @@ class NewFeaturesTest {
         assertEquals(1, removed)
         assertEquals(listOf(recent), dao.listTrashedIds())
     }
+
+    @Test
+    fun delete_page_then_append_does_not_overwrite_existing_page_file() = runBlocking {
+        val storage = StorageManager(context, ExportPreferences(context))
+        val docId = newDoc("NoCollision")
+        val f0 = storage.newProcessedFile(docId, 0).apply { writeText("page0") }
+        val f1 = storage.newProcessedFile(docId, 1).apply { writeText("page1_must_survive") }
+        val p0 = db.documentDao().insertPage(
+            PageEntity(
+                docId = docId,
+                index = 0,
+                originalPath = f0.absolutePath,
+                processedPath = f0.absolutePath,
+                thumbnailPath = f0.absolutePath
+            )
+        )
+        db.documentDao().insertPage(
+            PageEntity(
+                docId = docId,
+                index = 1,
+                originalPath = f1.absolutePath,
+                processedPath = f1.absolutePath,
+                thumbnailPath = f1.absolutePath
+            )
+        )
+        val repo = DocumentRepositoryImpl(db.documentDao())
+        repo.deletePage(p0)
+
+        val nextIdx = repo.nextPageIndex(docId)
+        assertEquals(1, nextIdx)
+        val fNew = storage.newProcessedFile(docId, nextIdx).apply { writeText("page2_new") }
+        assertTrue("新页文件路径不应与原第1页冲突", fNew.absolutePath != f1.absolutePath)
+        assertEquals("page1_must_survive", f1.readText())
+    }
 }

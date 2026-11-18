@@ -85,6 +85,8 @@ class MlKitOcrEngine @Inject constructor() : OcrEngine {
         language: Language
     ): OcrResult = suspendCancellableCoroutine { cont ->
         val image = InputImage.fromBitmap(bitmap, 0)
+        val bw = bitmap.width.coerceAtLeast(1).toFloat()
+        val bh = bitmap.height.coerceAtLeast(1).toFloat()
         recognizer.process(image)
             .addOnSuccessListener { visionText ->
                 val blocks = mutableListOf<TextBlock>()
@@ -94,7 +96,16 @@ class MlKitOcrEngine @Inject constructor() : OcrEngine {
                         text = block.text,
                         confidence = 1f,
                         boundingBox = rect?.let {
-                            BoundingBox(it.left, it.top, it.right, it.bottom)
+                            BoundingBox(
+                                left = it.left,
+                                top = it.top,
+                                right = it.right,
+                                bottom = it.bottom,
+                                normLeft = (it.left / bw).coerceIn(0f, 1f),
+                                normTop = (it.top / bh).coerceIn(0f, 1f),
+                                normRight = (it.right / bw).coerceIn(0f, 1f),
+                                normBottom = (it.bottom / bh).coerceIn(0f, 1f)
+                            )
                         }
                     )
                 }

@@ -77,7 +77,9 @@ class PaddleOcrEngine @Inject constructor(
                     raw = engine.run(bitmap)
                 }
                 val text = raw.strRes.orEmpty().trim()
-                val blocks: List<TextBlock> = raw.recRes.orEmpty().map { it.toTextBlock() }
+                val bw = bitmap.width.coerceAtLeast(1).toFloat()
+                val bh = bitmap.height.coerceAtLeast(1).toFloat()
+                val blocks: List<TextBlock> = raw.recRes.orEmpty().map { it.toTextBlock(bw, bh) }
 
                 OcrResult(
                     text = text,
@@ -88,18 +90,26 @@ class PaddleOcrEngine @Inject constructor(
             }
         }
 
-    private fun RecResult.toTextBlock(): TextBlock = TextBlock(
+    private fun RecResult.toTextBlock(bw: Float, bh: Float): TextBlock = TextBlock(
         text = text.orEmpty(),
         confidence = confidence,
         boundingBox = dtBoxes?.takeIf { it.isNotEmpty() }?.let { pts ->
             // dtBoxes 是 4 个角点（左上、右上、右下、左下），取外接矩形
             val xs = pts.map { it.x }
             val ys = pts.map { it.y }
+            val l = xs.min().toInt()
+            val t = ys.min().toInt()
+            val r = xs.max().toInt()
+            val b = ys.max().toInt()
             BoundingBox(
-                left = xs.min().toInt(),
-                top = ys.min().toInt(),
-                right = xs.max().toInt(),
-                bottom = ys.max().toInt()
+                left = l,
+                top = t,
+                right = r,
+                bottom = b,
+                normLeft = (l / bw).coerceIn(0f, 1f),
+                normTop = (t / bh).coerceIn(0f, 1f),
+                normRight = (r / bw).coerceIn(0f, 1f),
+                normBottom = (b / bh).coerceIn(0f, 1f)
             )
         }
     )

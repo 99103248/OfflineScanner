@@ -43,6 +43,7 @@ class SaveBurstPagesUseCase @Inject constructor(
                     bmp.recycle()
                     if (corrected !== null && corrected !== bmp) corrected.recycle()
                     if (clamped !== null && clamped !== corrected) clamped.recycle()
+                    storage.deleteCacheFileIfTemp(uriString)
                 }
             }
             docId ?: error("连拍保存失败")

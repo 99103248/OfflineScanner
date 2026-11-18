@@ -43,9 +43,10 @@ sealed class AppRoute(val path: String) {
         fun create(docId: Long) = "document/$docId"
     }
 
-    /** 导出选择 */
-    data object Export : AppRoute("export/{docId}") {
-        fun create(docId: Long) = "export/$docId"
+    /** 导出选择；autoFormat 非空时进入页面后自动触发对应格式导出 */
+    data object Export : AppRoute("export/{docId}?autoFormat={autoFormat}") {
+        fun create(docId: Long, autoFormat: String = "") =
+            "export/$docId?autoFormat=$autoFormat"
     }
 
     /** 图片格式转换 */

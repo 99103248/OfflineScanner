@@ -40,21 +40,52 @@ class StorageManager @Inject constructor(
     val cacheRoot: File =
         File(context.cacheDir, "tmp").apply { mkdirs() }
 
+    private fun uniqueToken(): String =
+        java.util.UUID.randomUUID().toString().replace("-", "").take(8)
+
     fun documentDir(docId: Long): File =
         File(documentsRoot, docId.toString()).apply { mkdirs() }
 
     fun newOriginalFile(docId: Long, pageIndex: Int): File =
-        File(documentDir(docId), "${pageIndex}_orig.jpg")
+        File(documentDir(docId), "${pageIndex}_${uniqueToken()}_orig.jpg")
 
     fun newProcessedFile(docId: Long, pageIndex: Int): File =
-        File(documentDir(docId), "${pageIndex}_proc.jpg")
+        File(documentDir(docId), "${pageIndex}_${uniqueToken()}_proc.jpg")
 
     fun newThumbnailFile(docId: Long, pageIndex: Int): File =
-        File(documentDir(docId), "${pageIndex}_thumb.jpg")
+        File(documentDir(docId), "${pageIndex}_${uniqueToken()}_thumb.jpg")
 
     fun newCacheImage(prefix: String = "img"): File {
         val ts = SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
-        return File(cacheRoot, "${prefix}_$ts.jpg")
+        return File(cacheRoot, "${prefix}_${ts}_${uniqueToken()}.jpg")
+    }
+
+    /** 若文件位于应用临时缓存目录内，安全删除它，避免缓存无限制膨胀。 */
+    fun deleteCacheFileIfTemp(path: String?) {
+        if (path.isNullOrBlank()) return
+        runCatching {
+            val file = File(path)
+            if (!file.exists()) return
+            val canonical = file.canonicalPath
+            val cachePrefix = context.cacheDir.canonicalPath + File.separator
+            if (canonical.startsWith(cachePrefix)) {
+                file.delete()
+            }
+        }
+    }
+
+    /** 清理临时缓存目录中超过 [maxAgeMs] 的过期文件，返回清理数量。 */
+    fun cleanExpiredCache(maxAgeMs: Long = 24L * 60 * 60 * 1000): Int {
+        val cutoff = System.currentTimeMillis() - maxAgeMs
+        var count = 0
+        runCatching {
+            cacheRoot.listFiles()?.forEach { f ->
+                if (f.isFile && f.lastModified() < cutoff && f.delete()) {
+                    count++
+                }
+            }
+        }
+        return count
     }
 
     /** 默认导出目录下创建文件（旧路径，给不支持 SAF 的代码兜底） */

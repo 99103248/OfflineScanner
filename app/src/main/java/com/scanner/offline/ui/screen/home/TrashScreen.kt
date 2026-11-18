@@ -124,14 +124,28 @@ private fun TrashItem(
                 .padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Outlined.DocumentScanner,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+            Box(
                 modifier = Modifier
-                    .size(40.dp)
-                    .clip(RoundedCornerShape(8.dp))
-            )
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(8.dp)),
+                contentAlignment = Alignment.Center
+            ) {
+                if (!doc.coverPath.isNullOrBlank()) {
+                    AsyncImage(
+                        model = File(doc.coverPath),
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
+                    )
+                } else {
+                    Icon(
+                        imageVector = Icons.Outlined.DocumentScanner,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(
@@ -141,7 +155,7 @@ private fun TrashItem(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = stringResource(R.string.trash_deleted_at, Time.formatShort(doc.deletedAt ?: doc.updatedAt)),
+                    text = "${doc.pageCount} 页 · " + stringResource(R.string.trash_deleted_at, Time.formatShort(doc.deletedAt ?: doc.updatedAt)),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )

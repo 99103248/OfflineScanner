@@ -34,11 +34,20 @@ object DatabaseModule {
         }
     }
 
+    /** v2 → v3：pages 表新增 OCR 文本框坐标序列化字段 */
+    private val MIGRATION_2_3: Migration = Migration2To3()
+
+    private class Migration2To3 : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE pages ADD COLUMN ocrBlocksJson TEXT")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext ctx: Context): AppDatabase =
         Room.databaseBuilder(ctx, AppDatabase::class.java, "scanner.db")
-            .addMigrations(MIGRATION_1_2)
+            .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
             .build()
 
     @Provides

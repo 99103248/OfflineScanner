@@ -5,10 +5,12 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.pdf.PdfDocument
 import com.scanner.offline.domain.model.ExportFormat
 import com.scanner.offline.domain.model.PdfPaperSize
 import com.scanner.offline.domain.model.TableData
+import com.scanner.offline.domain.model.TextBlock
 import java.io.File
 import java.io.FileOutputStream
 import java.io.OutputStream
@@ -54,29 +56,31 @@ class DocumentExporter {
         paperSize: PdfPaperSize = PdfPaperSize.A4,
         maxImageDimension: Int = 3000
     ) {
-        imagesToPdfInternal(imagePaths, pageTexts = null, output, paperSize, maxImageDimension)
+        imagesToPdfInternal(imagePaths, pageTexts = null, pageBlocks = null, output, paperSize, maxImageDimension)
     }
 
     /**
-     * 可搜索 PDF：每页在图片下方叠加一层"隐形"OCR 文字（透明绘制）。
+     * 可搜索 PDF：每页在图片上叠加一层"隐形"OCR 文字（alpha=1 绘制）。
      * PDF 阅读器中可直接选中和搜索这些文字，而视觉上仍是扫描图。
      *
-     * [pageTexts] 与 imagePaths 一一对应；空白文本按无文字处理。
+     * [pageTexts] 与 imagePaths 一一对应；若提供 [pageBlocks] 则按真实文本框坐标原位对齐绘制。
      */
     fun imagesToSearchablePdf(
         imagePaths: List<String>,
         pageTexts: List<String>,
         output: OutputStream,
         paperSize: PdfPaperSize = PdfPaperSize.A4,
-        maxImageDimension: Int = 3000
+        maxImageDimension: Int = 3000,
+        pageBlocks: List<List<TextBlock>>? = null
     ) {
         require(imagePaths.size == pageTexts.size) { "图片与文本数量不一致" }
-        imagesToPdfInternal(imagePaths, pageTexts, output, paperSize, maxImageDimension)
+        imagesToPdfInternal(imagePaths, pageTexts, pageBlocks, output, paperSize, maxImageDimension)
     }
 
     private fun imagesToPdfInternal(
         imagePaths: List<String>,
         pageTexts: List<String>?,
+        pageBlocks: List<List<TextBlock>>?,
         output: OutputStream,
         paperSize: PdfPaperSize,
         maxImageDimension: Int
@@ -91,9 +95,12 @@ class DocumentExporter {
                     .create()
                 val page = pdf.startPage(info)
                 val margin = if (paperSize == PdfPaperSize.ORIGINAL) 0f else PDF_MARGIN_PT
-                drawFittedBitmap(page.canvas, bmp, pageWidth, pageHeight, margin)
+                val dstRect = drawFittedBitmap(page.canvas, bmp, pageWidth, pageHeight, margin)
                 val text = pageTexts?.getOrNull(index)
-                if (!text.isNullOrBlank()) {
+                val blocks = pageBlocks?.getOrNull(index).orEmpty()
+                if (blocks.any { it.text.isNotBlank() && it.boundingBox != null }) {
+                    drawAlignedBlocksTextLayer(page.canvas, blocks, dstRect, bmp.width, bmp.height)
+                } else if (!text.isNullOrBlank()) {
                     drawInvisibleTextLayer(page.canvas, text, pageWidth, pageHeight, margin)
                 }
                 pdf.finishPage(page)
@@ -119,14 +126,14 @@ class DocumentExporter {
         return w to h
     }
 
-    /** 等比缩放并居中绘制到页面内，四周留白。 */
+    /** 等比缩放并居中绘制到页面内，四周留白，返回实际图片绘制区域。 */
     private fun drawFittedBitmap(
         canvas: Canvas,
         bmp: Bitmap,
         pageWidth: Int,
         pageHeight: Int,
         margin: Float
-    ) {
+    ): RectF {
         val availW = (pageWidth - margin * 2).coerceAtLeast(1f)
         val availH = (pageHeight - margin * 2).coerceAtLeast(1f)
         val scale = minOf(availW / bmp.width, availH / bmp.height)
@@ -134,8 +141,55 @@ class DocumentExporter {
         val drawH = bmp.height * scale
         val left = (pageWidth - drawW) / 2f
         val top = (pageHeight - drawH) / 2f
-        val dst = android.graphics.RectF(left, top, left + drawW, top + drawH)
+        val dst = RectF(left, top, left + drawW, top + drawH)
         canvas.drawBitmap(bmp, null, dst, Paint(Paint.FILTER_BITMAP_FLAG))
+        return dst
+    }
+
+    /**
+     * 按 OCR [TextBlock] 的真实坐标在图片对应位置绘制隐形文字层，实现 PDF 阅读器内原位框选复制。
+     */
+    private fun drawAlignedBlocksTextLayer(
+        canvas: Canvas,
+        blocks: List<TextBlock>,
+        imageRect: RectF,
+        bmpWidth: Int,
+        bmpHeight: Int
+    ) {
+        val paint = Paint().apply {
+            color = Color.argb(1, 0, 0, 0)
+            isAntiAlias = false
+        }
+        val refW = maxOf(bmpWidth, blocks.maxOfOrNull { it.boundingBox?.right ?: 0 } ?: bmpWidth)
+            .coerceAtLeast(1).toFloat()
+        val refH = maxOf(bmpHeight, blocks.maxOfOrNull { it.boundingBox?.bottom ?: 0 } ?: bmpHeight)
+            .coerceAtLeast(1).toFloat()
+
+        blocks.forEach { block ->
+            val box = block.boundingBox ?: return@forEach
+            val lines = block.text.split('\n').filter { it.isNotBlank() }
+            if (lines.isEmpty()) return@forEach
+
+            val nl = if (box.hasNormalized) box.normLeft else (box.left / refW).coerceIn(0f, 1f)
+            val nt = if (box.hasNormalized) box.normTop else (box.top / refH).coerceIn(0f, 1f)
+            val nr = if (box.hasNormalized) box.normRight else (box.right / refW).coerceIn(nl + 0.01f, 1f)
+            val nb = if (box.hasNormalized) box.normBottom else (box.bottom / refH).coerceIn(nt + 0.01f, 1f)
+
+            val x = imageRect.left + nl * imageRect.width()
+            val top = imageRect.top + nt * imageRect.height()
+            val boxW = ((nr - nl) * imageRect.width()).coerceAtLeast(8f)
+            val boxH = ((nb - nt) * imageRect.height()).coerceAtLeast(6f)
+            val lineH = (boxH / lines.size).coerceAtLeast(5f)
+            paint.textSize = (lineH * 0.85f).coerceIn(4f, 24f)
+
+            lines.forEachIndexed { idx, line ->
+                val measured = paint.measureText(line)
+                paint.textScaleX = if (measured > 1f) (boxW / measured).coerceIn(0.5f, 2.0f) else 1f
+                val y = top + (idx + 0.85f) * lineH
+                canvas.drawText(line, x, y, paint)
+            }
+            paint.textScaleX = 1f
+        }
     }
 
     /** 按最大边采样解码，避免超大图把内存打爆。 */

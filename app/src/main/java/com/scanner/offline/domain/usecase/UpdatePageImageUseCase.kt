@@ -14,11 +14,27 @@ class UpdatePageImageUseCase @Inject constructor(
 ) {
     suspend operator fun invoke(pageId: Long, bitmap: Bitmap): Unit = withContext(Dispatchers.IO) {
         val page = repo.getPage(pageId) ?: error("页面不存在")
-        storage.saveBitmap(bitmap, File(page.processedPath))
-        val thumbH = (bitmap.height * 320f / bitmap.width).toInt().coerceAtLeast(1)
+        val newProcessed = storage.saveBitmap(
+            bitmap,
+            storage.newProcessedFile(page.docId, page.index)
+        )
+        val thumbH = (bitmap.height * 320f / bitmap.width.coerceAtLeast(1)).toInt().coerceAtLeast(1)
         val thumb = Bitmap.createScaledBitmap(bitmap, 320, thumbH, true)
-        storage.saveBitmap(thumb, File(page.thumbnailPath), quality = 70)
+        val newThumb = storage.saveBitmap(
+            thumb,
+            storage.newThumbnailFile(page.docId, page.index),
+            quality = 70
+        )
         if (thumb !== bitmap) thumb.recycle()
-        repo.updatePageImage(pageId, page.processedPath, page.thumbnailPath)
+
+        repo.updatePageImage(pageId, newProcessed.absolutePath, newThumb.absolutePath)
+
+        // 清理旧版本处理图与缩略图（不误删原图）
+        if (page.processedPath != newProcessed.absolutePath && page.processedPath != page.originalPath) {
+            runCatching { File(page.processedPath).delete() }
+        }
+        if (page.thumbnailPath != newThumb.absolutePath && page.thumbnailPath != page.originalPath) {
+            runCatching { File(page.thumbnailPath).delete() }
+        }
     }
 }

@@ -26,7 +26,7 @@ class RecognizeTextUseCase @Inject constructor(
         try {
             val res = factory.recognize(bmp, language)
             pageIdToUpdate?.let { id ->
-                repo.updatePageOcr(id, res.text, res.language.code)
+                repo.updatePageOcr(id, res.text, res.language.code, res.blocks)
             }
             res
         } finally {

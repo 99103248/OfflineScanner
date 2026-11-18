@@ -72,6 +72,7 @@ class BackupManager @Inject constructor(
                             put("thumbnail", if (thumbOk) thumbEntry else if (processedOk) processedEntry else originalEntry)
                             put("ocrText", page.ocrText ?: "")
                             put("ocrLanguage", page.ocrLanguage?.code ?: "")
+                            put("ocrBlocks", com.scanner.offline.engine.ocr.OcrBlockCodec.encode(page.ocrBlocks))
                         }
                     )
                     done++
@@ -171,9 +172,12 @@ class BackupManager @Inject constructor(
                     } else {
                         srcProcessed.copyTo(destThumb, overwrite = true)
                     }
-                    val lang = pageJson.optString("ocrLanguage")
+                     val lang = pageJson.optString("ocrLanguage")
                         .takeIf { it.isNotBlank() }
                         ?.let { code -> Language.entries.firstOrNull { it.code == code } }
+                    val blocks = com.scanner.offline.engine.ocr.OcrBlockCodec.decode(
+                        pageJson.optString("ocrBlocks").takeIf { it.isNotBlank() }
+                    )
                     repo.addPage(
                         Page(
                             docId = docId,
@@ -182,7 +186,8 @@ class BackupManager @Inject constructor(
                             processedPath = destProcessed.absolutePath,
                             thumbnailPath = destThumb.absolutePath,
                             ocrText = pageJson.optString("ocrText").takeIf { it.isNotBlank() },
-                            ocrLanguage = lang
+                            ocrLanguage = lang,
+                            ocrBlocks = blocks
                         )
                     )
                     restoredPages++

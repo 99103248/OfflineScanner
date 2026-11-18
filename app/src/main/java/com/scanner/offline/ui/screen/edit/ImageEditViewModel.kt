@@ -55,7 +55,9 @@ class ImageEditViewModel @Inject constructor(
     }
 
     fun bindPage(id: Long?) {
-        pageId = id?.takeIf { it > 0 }
+        val valid = id?.takeIf { it > 0 }
+        pageId = valid
+        _state.update { it.copy(isPageEdit = valid != null) }
     }
 
     fun load(imageUri: String) {
@@ -405,18 +407,24 @@ class ImageEditViewModel @Inject constructor(
                     val pid = pageId
                     if (pid != null) {
                         updatePage(pid, bmp)
+                        null
+                    } else {
+                        saveEdited(bmp, cur.format, Time.nowDocName("edited"), cur.quality)
                     }
-                    saveEdited(bmp, cur.format, Time.nowDocName("edited"), cur.quality)
                 }
             }.onSuccess { result ->
+                val corners = withContext(Dispatchers.Default) { edgeDetector.detect(bmp) }
                 _state.update {
                     it.copy(
                         saving = false,
                         working = bmp,
+                        imageAspect = bmp.width.toFloat() / bmp.height.coerceAtLeast(1),
                         cropRect = NormalizedCropRect.full(),
+                        perspectiveCorners = corners,
                         freeformPoints = emptyList(),
                         dirty = true,
                         lastResult = result,
+                        pageSavedMessage = if (result == null) "已保存页面修改" else null,
                         strokes = emptyList(),
                         redactRects = emptyList()
                     )
@@ -425,6 +433,10 @@ class ImageEditViewModel @Inject constructor(
                 _state.update { it.copy(saving = false, error = e.message ?: "保存失败") }
             }
         }
+    }
+
+    fun consumePageSavedMessage() {
+        _state.update { it.copy(pageSavedMessage = null) }
     }
 
     private fun defaultCorners(): List<PointF> {
@@ -486,6 +498,8 @@ data class ImageEditUiState(
     val redactRects: List<NormalizedCropRect> = emptyList(),
     val redactStyle: RedactStyle = RedactStyle.BLACK,
     val dirty: Boolean = false,
+    val isPageEdit: Boolean = false,
+    val pageSavedMessage: String? = null,
     val lastResult: ExportResult? = null,
     val error: String? = null
 )

@@ -12,9 +12,12 @@ import android.print.PrintManager
 import com.scanner.offline.domain.model.PdfPaperSize
 import com.scanner.offline.engine.export.DocumentExporter
 import java.io.FileOutputStream
+import java.util.concurrent.Executors
 
 /** 调起 Android 系统打印服务，把文档页面打印为 PDF 或直接送打印机。 */
 object PrintUtils {
+
+    private val printExecutor = Executors.newSingleThreadExecutor()
 
     fun printDocument(
         context: Context,
@@ -58,13 +61,30 @@ object PrintUtils {
             cancellationSignal: CancellationSignal?,
             callback: WriteResultCallback
         ) {
-            try {
-                FileOutputStream(destination.fileDescriptor).use { os ->
-                    DocumentExporter().imagesToPdf(imagePaths, os, paperSize)
+            if (cancellationSignal?.isCanceled == true) {
+                runCatching { destination.close() }
+                callback.onWriteCancelled()
+                return
+            }
+            printExecutor.execute {
+                try {
+                    if (cancellationSignal?.isCanceled == true) {
+                        callback.onWriteCancelled()
+                        return@execute
+                    }
+                    FileOutputStream(destination.fileDescriptor).use { os ->
+                        DocumentExporter().imagesToPdf(imagePaths, os, paperSize)
+                    }
+                    if (cancellationSignal?.isCanceled == true) {
+                        callback.onWriteCancelled()
+                    } else {
+                        callback.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
+                    }
+                } catch (e: Exception) {
+                    callback.onWriteFailed(e.message ?: "打印失败")
+                } finally {
+                    runCatching { destination.close() }
                 }
-                callback.onWriteFinished(arrayOf(PageRange.ALL_PAGES))
-            } catch (e: Exception) {
-                callback.onWriteFailed(e.message ?: "打印失败")
             }
         }
     }

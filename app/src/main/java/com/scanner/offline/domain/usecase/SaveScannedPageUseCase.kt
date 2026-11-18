@@ -64,6 +64,7 @@ class SaveScannedPageUseCase @Inject constructor(
                     recognize(processedFile.absolutePath, com.scanner.offline.domain.model.Language.AUTO, pageId)
                 }
             }
+            storage.deleteCacheFileIfTemp(processedBitmapPath)
             targetDocId
         } finally {
             if (clamped !== src) src.recycle()

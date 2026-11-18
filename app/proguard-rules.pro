@@ -12,20 +12,15 @@
 # engine / util / export 层允许混淆
 # ------------------------------------------------------------
 
-# Domain models（Room Entity、导航参数、数据类等需要字段名称）
+# Domain models & DB entities（Room Entity、数据类等需要字段名称）
 -keep class com.scanner.offline.domain.model.** { *; }
 -keep class com.scanner.offline.data.db.** { *; }
 -keep class com.scanner.offline.data.storage.** { *; }
 
-# Hilt 注入的 ViewModel
--keep class * extends androidx.lifecycle.ViewModel { *; }
-
-# UI 层 Composable 需要保留（导航反射）
--keep class com.scanner.offline.ui.** { *; }
-
-# domain usecase / repository 接口（Hilt 需要）
--keep class com.scanner.offline.domain.repository.** { *; }
--keep class com.scanner.offline.domain.usecase.** { *; }
+# Hilt 注入的 ViewModel 允许混淆与压缩未用方法，仅保留构造入口
+-keep,allowobfuscation,allowshrinking @dagger.hilt.android.lifecycle.HiltViewModel class * {
+    @javax.inject.Inject <init>(...);
+}
 # ------------------------------------------------------------
 # Hilt
 # ------------------------------------------------------------

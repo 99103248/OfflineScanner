@@ -343,7 +343,7 @@ private fun PageCard(
                 .height(220.dp)
                 .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
         ) {
-            if (File(page.processedPath).exists()) {
+            if (page.processedPath.isNotBlank()) {
                 AsyncImage(
                     model = File(page.processedPath),
                     contentDescription = null,

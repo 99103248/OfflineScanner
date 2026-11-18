@@ -27,7 +27,8 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val repo: DocumentRepository,
     private val exportDocument: dagger.Lazy<ExportDocumentUseCase>,
-    private val settings: com.scanner.offline.data.settings.SettingsRepository
+    private val settings: com.scanner.offline.data.settings.SettingsRepository,
+    private val storage: com.scanner.offline.data.storage.StorageManager
 ) : ViewModel() {
 
     private val _query = MutableStateFlow("")
@@ -46,12 +47,13 @@ class HomeViewModel @Inject constructor(
         )
 
     init {
-        // 回收站自动清理（按设置的天数）
+        // 回收站自动清理（按设置的天数）+ 过期临时缓存文件清理
         val days = settings.settings.value.trashRetentionDays
-        if (days > 0) {
-            viewModelScope.launch {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            if (days > 0) {
                 repo.purgeTrashOlderThan(System.currentTimeMillis() - days * 24L * 60L * 60L * 1000L)
             }
+            storage.cleanExpiredCache()
         }
     }
 

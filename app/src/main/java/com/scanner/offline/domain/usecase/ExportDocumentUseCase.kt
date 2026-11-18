@@ -21,14 +21,10 @@ class ExportDocumentUseCase @Inject constructor(
     private val ocr: RecognizeTextUseCase
 ) {
     /**
-     * 按格式导出文档。Excel 模式需要传入 [tablesIfExcel]（占位：未来可由表格识别模型生成）
+     * 按格式导出文档。Excel 模式需要传入 [tablesIfExcel]（或自动通过坐标聚类解析）
      *
      * PDF 模式下 [searchablePdf] = true 时导出"可搜索 PDF"：
-     * 每页叠加隐形 OCR 文字层（缺 OCR 的页会先自动识别）。
-     *
-     * 输出位置由 [StorageManager.createExportSink] 决定：
-     *  - 用户在"我的"里选过自定义目录 → 写到 SAF 目录
-     *  - 否则 → 写到应用私有外部目录 (/Android/data/<pkg>/files/exports)
+     * 每页叠加隐形 OCR 文字层（缺 OCR 的页会先自动识别，有坐标框时按真实位置对齐）。
      */
     suspend operator fun invoke(
         docId: Long,
@@ -42,9 +38,6 @@ class ExportDocumentUseCase @Inject constructor(
         val doc: Document = repo.get(docId) ?: error("文档不存在")
         if (doc.pages.isEmpty()) error("文档没有页面")
 
-        // 导出过程中可能要先做 OCR（suspend），所以"打开 OS / 写入 / 关闭"分成三步：
-        //   1. 先在协程里把所有需要的文本拿到 (含 OCR 结果)
-        //   2. 再打开 OutputStream 把数据写进去
         when (format) {
             ExportFormat.PDF -> {
                 val sink = storage.createExportSink(
@@ -53,11 +46,22 @@ class ExportDocumentUseCase @Inject constructor(
                     mimeType = format.mimeType
                 )
                 if (searchablePdf) {
-                    val texts = doc.pages.map { it.ocrText ?: ocr(it.processedPath, ocrLanguage, it.id).text }
+                    val ocrPairs = doc.pages.map { p ->
+                        if (!p.ocrText.isNullOrBlank()) {
+                            p.ocrText to p.ocrBlocks
+                        } else {
+                            val res = ocr(p.processedPath, ocrLanguage, p.id)
+                            res.text to res.blocks
+                        }
+                    }
                     sink.openOutputStream().use { os ->
                         exporter.imagesToSearchablePdf(
-                            doc.pages.map { it.processedPath }, texts, os,
-                            paperSize = pdfPaper, maxImageDimension = pdfMaxImageDimension
+                            imagePaths = doc.pages.map { it.processedPath },
+                            pageTexts = ocrPairs.map { it.first },
+                            output = os,
+                            paperSize = pdfPaper,
+                            maxImageDimension = pdfMaxImageDimension,
+                            pageBlocks = ocrPairs.map { it.second }
                         )
                     }
                 } else {
@@ -79,8 +83,12 @@ class ExportDocumentUseCase @Inject constructor(
             }
             ExportFormat.EXCEL -> {
                 val tables = tablesIfExcel ?: doc.pages.map { p ->
-                    val text = p.ocrText ?: ocr(p.processedPath, ocrLanguage, p.id).text
-                    TableParser.fromPlainText(text)
+                    if (!p.ocrText.isNullOrBlank()) {
+                        TableParser.fromOcr(p.ocrText, p.ocrBlocks)
+                    } else {
+                        val res = ocr(p.processedPath, ocrLanguage, p.id)
+                        TableParser.fromOcr(res.text, res.blocks)
+                    }
                 }
                 val sink = storage.createExportSink(doc.name, format.extension, format.mimeType)
                 sink.openOutputStream().use { os -> exporter.tableToExcel(tables, os) }

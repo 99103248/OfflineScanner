@@ -1,5 +1,6 @@
 package com.scanner.offline.util
 
+import android.annotation.SuppressLint
 import android.content.ContentResolver
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -9,6 +10,7 @@ import android.net.Uri
 import java.io.File
 import java.io.InputStream
 
+@SuppressLint("ExifInterface")
 object BitmapUtils {
 
     /** 从 URI 读取 Bitmap，并按 Exif 旋转 */

@@ -24,6 +24,12 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE id = :id LIMIT 1")
     suspend fun getDocument(id: Long): DocumentEntity?
 
+    @Query("SELECT * FROM documents WHERE id = :id LIMIT 1")
+    fun observeDocument(id: Long): Flow<DocumentEntity?>
+
+    @Query("UPDATE documents SET updatedAt = :updatedAt WHERE id = :id")
+    suspend fun touchDocument(id: Long, updatedAt: Long)
+
     @Query("UPDATE documents SET name = :name, updatedAt = :updatedAt WHERE id = :id")
     suspend fun renameDocument(id: Long, name: String, updatedAt: Long)
 
@@ -73,8 +79,29 @@ interface DocumentDao {
     @Query("SELECT * FROM documents WHERE deletedAt IS NOT NULL ORDER BY deletedAt DESC")
     fun observeTrashedDocuments(): Flow<List<DocumentEntity>>
 
+    @Query(
+        """
+        SELECT d.id AS id,
+               d.name AS name,
+               d.createdAt AS createdAt,
+               d.updatedAt AS updatedAt,
+               d.isFavorite AS isFavorite,
+               d.deletedAt AS deletedAt,
+               (SELECT COUNT(*) FROM pages p WHERE p.docId = d.id) AS pageCount,
+               (SELECT p.thumbnailPath FROM pages p
+                WHERE p.docId = d.id ORDER BY p.`index` ASC LIMIT 1) AS coverPath
+        FROM documents d
+        WHERE d.deletedAt IS NOT NULL
+        ORDER BY d.deletedAt DESC
+        """
+    )
+    fun observeTrashedSummaries(): Flow<List<DocumentSummary>>
+
     @Query("SELECT id FROM documents WHERE deletedAt IS NOT NULL")
     suspend fun listTrashedIds(): List<Long>
+
+    @Query("SELECT id FROM documents WHERE deletedAt IS NOT NULL AND deletedAt < :cutoff")
+    suspend fun listExpiredTrashedIds(cutoff: Long): List<Long>
 
     /** 备份用：取出所有文档（含回收站） */
     @Query("SELECT * FROM documents ORDER BY updatedAt DESC")
@@ -86,13 +113,16 @@ interface DocumentDao {
     @Query("SELECT * FROM pages WHERE docId = :docId ORDER BY `index` ASC")
     suspend fun getPagesByDoc(docId: Long): List<PageEntity>
 
+    @Query("SELECT * FROM pages WHERE docId = :docId ORDER BY `index` ASC")
+    fun observePagesByDoc(docId: Long): Flow<List<PageEntity>>
+
     @Query("SELECT * FROM pages WHERE id = :id LIMIT 1")
     suspend fun getPage(id: Long): PageEntity?
 
-    @Query("UPDATE pages SET ocrText = :text, ocrLanguage = :lang WHERE id = :pageId")
-    suspend fun updatePageOcr(pageId: Long, text: String, lang: String)
+    @Query("UPDATE pages SET ocrText = :text, ocrLanguage = :lang, ocrBlocksJson = :blocksJson WHERE id = :pageId")
+    suspend fun updatePageOcr(pageId: Long, text: String, lang: String, blocksJson: String? = null)
 
-    @Query("UPDATE pages SET processedPath = :processed, thumbnailPath = :thumb WHERE id = :pageId")
+    @Query("UPDATE pages SET processedPath = :processed, thumbnailPath = :thumb, ocrBlocksJson = NULL WHERE id = :pageId")
     suspend fun updatePageImage(pageId: Long, processed: String, thumb: String)
 
     /** 当前文档最大页序号；空文档返回 -1。用于原子地计算下一页 index。 */

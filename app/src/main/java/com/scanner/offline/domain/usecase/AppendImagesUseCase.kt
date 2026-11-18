@@ -61,6 +61,7 @@ class AppendImagesUseCase @Inject constructor(
                 bmp.recycle()
                 if (corrected != null && corrected !== bmp) corrected.recycle()
                 if (clamped != null && clamped !== corrected) clamped.recycle()
+                storage.deleteCacheFileIfTemp(uriString)
                 onProgress(index + 1, imageUris.size)
             }
         }

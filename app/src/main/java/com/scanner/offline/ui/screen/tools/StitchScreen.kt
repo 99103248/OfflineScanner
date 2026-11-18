@@ -53,17 +53,27 @@ import javax.inject.Inject
 @HiltViewModel
 class StitchViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val saveEdited: SaveEditedImageUseCase
+    private val saveEdited: SaveEditedImageUseCase,
+    private val storage: com.scanner.offline.data.storage.StorageManager
 ) : ViewModel() {
     fun stitch(uris: List<String>, mode: StitchMode, onDone: (String) -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val bmps = uris.mapNotNull { decode(it) }
-                    require(bmps.size >= 2) { "至少选两张图" }
-                    val out = BitmapStitcher.stitch(bmps, mode)
-                    val r = saveEdited(out, ExportFormat.JPG, Time.nowDocName("stitch"))
-                    r.displayName
+                    try {
+                        require(bmps.size >= 2) { "至少选两张图" }
+                        val out = BitmapStitcher.stitch(bmps, mode)
+                        try {
+                            val r = saveEdited(out, ExportFormat.JPG, Time.nowDocName("stitch"))
+                            r.displayName
+                        } finally {
+                            out.recycle()
+                        }
+                    } finally {
+                        bmps.forEach { if (!it.isRecycled) it.recycle() }
+                        uris.forEach { storage.deleteCacheFileIfTemp(it) }
+                    }
                 }
             }.onSuccess(onDone).onFailure { onError(it.message ?: "拼接失败") }
         }

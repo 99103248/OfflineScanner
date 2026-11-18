@@ -534,7 +534,7 @@ private fun GridItem(
 @Composable
 private fun Thumbnail(doc: Document) {
     val path = doc.coverPath
-    if (path != null && File(path).exists()) {
+    if (!path.isNullOrBlank()) {
         AsyncImage(
             model = File(path),
             contentDescription = null,

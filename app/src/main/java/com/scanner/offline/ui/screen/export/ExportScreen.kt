@@ -63,6 +63,7 @@ import kotlinx.coroutines.launch
 fun ExportScreen(
     docId: Long,
     onBack: () -> Unit,
+    autoFormat: String = "",
     viewModel: ExportViewModel = hiltViewModel()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -72,6 +73,26 @@ fun ExportScreen(
     // 可搜索 PDF 需要先对缺文字的页面跑 OCR，耗时较长，默认关闭由用户按需开启。
     var searchablePdf by remember { mutableStateOf(false) }
     var pdfPaper by remember { mutableStateOf(viewModel.defaultPdfPaper) }
+    var autoTriggered by androidx.compose.runtime.saveable.rememberSaveable(docId, autoFormat) {
+        mutableStateOf(false)
+    }
+
+    LaunchedEffect(docId, autoFormat) {
+        if (!autoTriggered && autoFormat.isNotBlank() && docId > 0) {
+            val target = ExportFormat.entries.firstOrNull {
+                it.extension.equals(autoFormat, ignoreCase = true)
+            }
+            if (target != null) {
+                autoTriggered = true
+                viewModel.export(
+                    docId = docId,
+                    format = target,
+                    searchablePdf = false,
+                    pdfPaper = pdfPaper
+                )
+            }
+        }
+    }
 
     LaunchedEffect(state.error) {
         state.error?.let { scope.launch { snackbar.showSnackbar(it) } }

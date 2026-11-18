@@ -114,6 +114,12 @@ fun ImageEditScreen(
             scope.launch { snackbar.showSnackbar(resources.getString(R.string.success_export, it.displayName)) }
         }
     }
+    LaunchedEffect(state.pageSavedMessage) {
+        state.pageSavedMessage?.let { msg ->
+            viewModel.consumePageSavedMessage()
+            scope.launch { snackbar.showSnackbar(msg) }
+        }
+    }
 
     val title = when (mode) {
         ImageEditMode.CROP -> stringResource(R.string.tool_crop)
@@ -492,8 +498,8 @@ private fun UniversalCropEditor(
     val currentOnStroke by rememberUpdatedState(onStroke)
     val currentOnRedactRect by rememberUpdatedState(onRedactRect)
 
-    var activeCornerIndex by remember { mutableStateOf(-1) }
-    var activeEdgeIndex by remember { mutableStateOf(-1) }
+    var activeCornerIndex by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    var activeEdgeIndex by remember { androidx.compose.runtime.mutableIntStateOf(-1) }
 
     val isCropMode = mode == ImageEditMode.CROP
     val isMarkMode = mode == ImageEditMode.MARK

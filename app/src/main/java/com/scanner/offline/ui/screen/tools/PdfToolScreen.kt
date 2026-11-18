@@ -1,5 +1,6 @@
 package com.scanner.offline.ui.screen.tools
 
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +17,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -37,9 +39,9 @@ import androidx.lifecycle.viewModelScope
 import com.scanner.offline.data.storage.StorageManager
 import com.scanner.offline.engine.export.PdfToolkit
 import com.scanner.offline.util.Time
+import com.scanner.offline.util.UriUtils
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -55,33 +57,43 @@ class PdfToolViewModel @Inject constructor(
     private val toolkit: PdfToolkit,
     private val storage: StorageManager
 ) : ViewModel() {
-    fun run(uris: List<String>, action: PdfToolAction, range: String, onDone: (String) -> Unit, onError: (String) -> Unit) {
+    fun run(
+        uris: List<String>,
+        action: PdfToolAction,
+        range: String,
+        onDone: (String) -> Unit,
+        onError: (String) -> Unit
+    ) {
         viewModelScope.launch {
             runCatching {
                 withContext(Dispatchers.IO) {
                     val files = uris.mapNotNull { copyToCache(it) }
                     require(files.isNotEmpty()) { "请选择 PDF" }
-                    when (action) {
-                        PdfToolAction.MERGE -> {
-                            val sink = storage.createExportSink(Time.nowDocName("merged"), "pdf", "application/pdf")
-                            sink.openOutputStream().use { toolkit.merge(files, it) }
-                            sink.displayName
-                        }
-                        PdfToolAction.SPLIT -> {
-                            val pages = toolkit.renderPages(files.first())
-                            pages.forEachIndexed { i, bmp ->
-                                val sink = storage.createExportSink("${Time.nowDocName("page")}_p${i + 1}", "pdf", "application/pdf")
-                                sink.openOutputStream().use { toolkit.writeBitmapsAsPdf(listOf(bmp), it) }
-                                bmp.recycle()
+                    try {
+                        when (action) {
+                            PdfToolAction.MERGE -> {
+                                val sink = storage.createExportSink(Time.nowDocName("merged"), "pdf", "application/pdf")
+                                sink.openOutputStream().use { toolkit.merge(files, it) }
+                                sink.displayName
                             }
-                            "已拆成 ${pages.size} 个 PDF"
+                            PdfToolAction.SPLIT -> {
+                                val baseName = Time.nowDocName("page")
+                                val count = toolkit.splitStreaming(files.first()) { i, bmp ->
+                                    val sink = storage.createExportSink("${baseName}_p${i + 1}", "pdf", "application/pdf")
+                                    sink.openOutputStream().use { toolkit.writeBitmapsAsPdf(listOf(bmp), it) }
+                                }
+                                "已拆成 $count 个 PDF"
+                            }
+                            PdfToolAction.EXTRACT -> {
+                                val idx = parseRange(range, toolkit.pageCount(files.first()))
+                                require(idx.isNotEmpty()) { "请输入有效页码范围" }
+                                val sink = storage.createExportSink(Time.nowDocName("extract"), "pdf", "application/pdf")
+                                sink.openOutputStream().use { toolkit.extract(files.first(), idx, it) }
+                                sink.displayName
+                            }
                         }
-                        PdfToolAction.EXTRACT -> {
-                            val idx = parseRange(range, toolkit.pageCount(files.first()))
-                            val sink = storage.createExportSink(Time.nowDocName("extract"), "pdf", "application/pdf")
-                            sink.openOutputStream().use { toolkit.extract(files.first(), idx, it) }
-                            sink.displayName
-                        }
+                    } finally {
+                        files.forEach { storage.deleteCacheFileIfTemp(it.absolutePath) }
                     }
                 }
             }.onSuccess(onDone).onFailure { onError(it.message ?: "PDF 处理失败") }
@@ -93,9 +105,15 @@ class PdfToolViewModel @Inject constructor(
         val out = mutableListOf<Int>()
         parts.forEach { p ->
             if ("-" in p) {
-                val (a, b) = p.split("-").map { it.trim().toInt() }
-                for (i in a..b) out += (i - 1)
-            } else out += (p.toInt() - 1)
+                val bounds = p.split("-").mapNotNull { it.trim().toIntOrNull() }
+                if (bounds.size == 2) {
+                    val a = minOf(bounds[0], bounds[1])
+                    val b = maxOf(bounds[0], bounds[1])
+                    for (i in a..b) out += (i - 1)
+                }
+            } else {
+                p.toIntOrNull()?.let { out += (it - 1) }
+            }
         }
         return out.filter { it in 0 until pageCount }.distinct()
     }
@@ -120,30 +138,77 @@ fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewMode
     var uris by remember { mutableStateOf<List<String>>(emptyList()) }
     var action by remember { mutableStateOf(PdfToolAction.MERGE) }
     var range by remember { mutableStateOf("1-1") }
+    var running by remember { mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { list ->
-        uris = list.mapNotNull { com.scanner.offline.util.UriUtils.copyUriToCache(context, it, "pdf") }
+        uris = list.mapNotNull { UriUtils.copyUriToCache(context, it, "pdf") }
     }
     Scaffold(topBar = {
         TopAppBar(title = { Text("PDF 工具") }, navigationIcon = {
             IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
         })
     }, snackbarHost = { SnackbarHost(snack) }) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Button(onClick = { pick.launch(arrayOf("application/pdf")) }) { Text("选择 PDF") }
+        Column(
+            Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            if (running) {
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+            }
+            Button(
+                onClick = { pick.launch(arrayOf("application/pdf")) },
+                enabled = !running
+            ) { Text("选择 PDF") }
             Text("已选 ${uris.size} 个文件")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(selected = action == PdfToolAction.MERGE, onClick = { action = PdfToolAction.MERGE }, label = { Text("合并") })
-                FilterChip(selected = action == PdfToolAction.SPLIT, onClick = { action = PdfToolAction.SPLIT }, label = { Text("拆页") })
-                FilterChip(selected = action == PdfToolAction.EXTRACT, onClick = { action = PdfToolAction.EXTRACT }, label = { Text("抽页") })
+                FilterChip(
+                    selected = action == PdfToolAction.MERGE,
+                    onClick = { action = PdfToolAction.MERGE },
+                    label = { Text("合并") },
+                    enabled = !running
+                )
+                FilterChip(
+                    selected = action == PdfToolAction.SPLIT,
+                    onClick = { action = PdfToolAction.SPLIT },
+                    label = { Text("拆页") },
+                    enabled = !running
+                )
+                FilterChip(
+                    selected = action == PdfToolAction.EXTRACT,
+                    onClick = { action = PdfToolAction.EXTRACT },
+                    label = { Text("抽页") },
+                    enabled = !running
+                )
             }
             if (action == PdfToolAction.EXTRACT) {
-                OutlinedTextField(value = range, onValueChange = { range = it }, label = { Text("页码，如 1-3,5") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(
+                    value = range,
+                    onValueChange = { range = it },
+                    label = { Text("页码，如 1-3,5") },
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !running
+                )
             }
-            Button(onClick = {
-                viewModel.run(uris, action, range,
-                    onDone = { scope.launch { snack.showSnackbar(it) } },
-                    onError = { scope.launch { snack.showSnackbar(it) } })
-            }, enabled = uris.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("开始") }
+            Button(
+                onClick = {
+                    running = true
+                    viewModel.run(
+                        uris,
+                        action,
+                        range,
+                        onDone = {
+                            running = false
+                            uris = emptyList()
+                            scope.launch { snack.showSnackbar(it) }
+                        },
+                        onError = {
+                            running = false
+                            scope.launch { snack.showSnackbar(it) }
+                        }
+                    )
+                },
+                enabled = uris.isNotEmpty() && !running,
+                modifier = Modifier.fillMaxWidth()
+            ) { Text(if (running) "处理中..." else "开始") }
         }
     }
 }

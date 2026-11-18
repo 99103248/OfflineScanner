@@ -5,7 +5,6 @@ import android.graphics.PointF
 import android.util.Log
 import org.opencv.android.Utils
 import org.opencv.core.Core
-import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
@@ -13,34 +12,32 @@ import org.opencv.core.Point
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
-
 /**
- * 文档边缘检测：基于 OpenCV 的 Canny + findContours + approxPolyDP 算法。
+ * 文档边缘检测：基于 OpenCV 的多通道 Canny + findContours + approxPolyDP 算法。
  *
- * 流程：
- *   1. 缩放到中等分辨率（加快处理）
- *   2. 灰度 + 高斯模糊去噪
- *   3. Canny 边缘检测
- *   4. 形态学闭运算把断边连起来
- *   5. findContours 找出所有轮廓
- *   6. approxPolyDP 把轮廓近似为多边形，过滤出 4 个顶点的凸四边形
- *   7. 选面积最大的那个，认为它就是文档
- *   8. 把四角点排序为「左上、右上、右下、左下」并归一化到 [0,1]
- *
- * 失败时（OpenCV 加载失败 / 没找到合适的四边形）会**自动降级**到几何兜底，
- * 这样即便在 OpenCV native 没就绪的设备上也不会崩溃。
+ * 改进要点：
+ *   1. 支持灰度标准阈值、灰度低对比度阈值、HSV 饱和度通道三路候选检测，
+ *      大幅提升浅色桌面拍白纸、发票小票、身份证件的检出率；
+ *   2. 将最小面积占比下调至 8%，兼顾小尺寸票据与名片；
+ *   3. 提供 [detectQuadOrNull] 供相机取景器实时判断画面中是否检测到真实文档边框。
  */
 class EdgeDetector {
 
     /**
      * 返回 4 个角点（顺序：左上、右上、右下、左下，归一化到 [0,1]）。
+     * 未检测到有效四边形时自动回退到 5% 内缩矩形。
      */
     fun detect(bitmap: Bitmap): List<PointF> {
+        return detectQuadOrNull(bitmap) ?: fallback()
+    }
+
+    /**
+     * 尝试检测文档四角点；若画面中未找到符合条件的凸四边形，返回 null（不返回默认框）。
+     */
+    fun detectQuadOrNull(bitmap: Bitmap): List<PointF>? {
         return runCatching { detectWithOpenCv(bitmap) }
-            .getOrElse {
-                Log.w(TAG, "OpenCV 边缘检测失败，降级到默认四角：${it.message}")
-                fallback()
-            } ?: fallback()
+            .onFailure { Log.w(TAG, "OpenCV 边缘检测异常：${it.message}") }
+            .getOrNull()
     }
 
     private fun detectWithOpenCv(bitmap: Bitmap): List<PointF>? {
@@ -61,93 +58,99 @@ class EdgeDetector {
         val resized = Mat()
         Imgproc.resize(src, resized, Size(scaledW.toDouble(), scaledH.toDouble()))
 
-        // 2. 灰度 + 高斯模糊
+        // 灰度通道
         val gray = Mat()
         Imgproc.cvtColor(resized, gray, Imgproc.COLOR_RGBA2GRAY)
         Imgproc.GaussianBlur(gray, gray, Size(5.0, 5.0), 0.0)
 
-        // 3. Canny
-        val edges = Mat()
-        Imgproc.Canny(gray, edges, 50.0, 150.0)
+        // HSV 饱和度通道（针对浅色木桌/暖光下白纸对比度不足的场景）
+        val rgb = Mat()
+        val hsv = Mat()
+        val hsvChannels = ArrayList<Mat>(3)
+        Imgproc.cvtColor(resized, rgb, Imgproc.COLOR_RGBA2RGB)
+        Imgproc.cvtColor(rgb, hsv, Imgproc.COLOR_RGB2HSV)
+        Core.split(hsv, hsvChannels)
+        val sat = hsvChannels[1]
+        Imgproc.GaussianBlur(sat, sat, Size(5.0, 5.0), 0.0)
 
-        // 4. 闭运算：用一个 5x5 矩形核把断边连起来
-        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
-        Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, kernel)
+        val totalArea = (scaledW * scaledH).toDouble()
+        val minArea = totalArea * 0.08 // 支持证件、小票、名片（至少占画面 8%）
+        val maxArea = totalArea * 0.98
 
-        // 5. findContours
-        val contours = mutableListOf<MatOfPoint>()
-        val hierarchy = Mat()
-        Imgproc.findContours(
-            edges,
-            contours,
-            hierarchy,
-            Imgproc.RETR_EXTERNAL,
-            Imgproc.CHAIN_APPROX_SIMPLE
+        val candidates = listOf(
+            Triple(gray, 50.0, 150.0),
+            Triple(gray, 25.0, 80.0),
+            Triple(sat, 35.0, 110.0)
         )
 
-        if (contours.isEmpty()) {
-            release(src, resized, gray, edges, hierarchy, kernel)
-            return null
-        }
-
-        // 6 & 7. 找面积最大且能近似为凸四边形的轮廓
-        val totalArea = (scaledW * scaledH).toDouble()
-        val minArea = totalArea * 0.20  // 文档至少占 20%
         var bestQuad: List<Point>? = null
         var bestArea = 0.0
-        for (contour in contours) {
-            val area = Imgproc.contourArea(contour)
-            if (area < minArea) continue
-            val curve = MatOfPoint2f(*contour.toArray())
-            val peri = Imgproc.arcLength(curve, true)
-            val approx = MatOfPoint2f()
-            Imgproc.approxPolyDP(curve, approx, 0.02 * peri, true)
-            val pts = approx.toList()
-            curve.release(); approx.release()
-            if (pts.size == 4 && area > bestArea) {
-                val convexCheck = MatOfPoint(*pts.toTypedArray())
-                val isConvex = Imgproc.isContourConvex(convexCheck)
-                convexCheck.release()
-                if (isConvex) {
-                    bestQuad = pts
-                    bestArea = area
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
+
+        for ((channel, low, high) in candidates) {
+            val edges = Mat()
+            val hierarchy = Mat()
+            val contours = mutableListOf<MatOfPoint>()
+            try {
+                Imgproc.Canny(channel, edges, low, high)
+                Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, kernel)
+                Imgproc.findContours(
+                    edges,
+                    contours,
+                    hierarchy,
+                    Imgproc.RETR_LIST,
+                    Imgproc.CHAIN_APPROX_SIMPLE
+                )
+                for (contour in contours) {
+                    val area = Imgproc.contourArea(contour)
+                    if (area < minArea || area > maxArea) continue
+                    val curve = MatOfPoint2f(*contour.toArray())
+                    val peri = Imgproc.arcLength(curve, true)
+                    val approx = MatOfPoint2f()
+                    Imgproc.approxPolyDP(curve, approx, 0.02 * peri, true)
+                    val pts = approx.toList()
+                    curve.release()
+                    approx.release()
+                    if (pts.size == 4 && area > bestArea) {
+                        val convexCheck = MatOfPoint(*pts.toTypedArray())
+                        val isConvex = Imgproc.isContourConvex(convexCheck)
+                        convexCheck.release()
+                        if (isConvex) {
+                            bestQuad = pts
+                            bestArea = area
+                        }
+                    }
                 }
+            } finally {
+                contours.forEach { it.release() }
+                release(edges, hierarchy)
             }
+            // 若在当前通道已找到占画面 25% 以上的理想大轮廓，无需继续尝试后续通道
+            if (bestArea >= totalArea * 0.25) break
         }
-        contours.forEach { it.release() }
-        release(src, resized, gray, edges, hierarchy, kernel)
+
+        hsvChannels.forEach { it.release() }
+        release(src, resized, gray, rgb, hsv, kernel)
 
         val quad = bestQuad ?: return null
 
-        // 8. 归一化 + 排序为左上/右上/右下/左下
         val normalized = quad.map { p ->
             PointF(
                 (p.x / scaledW.toDouble()).toFloat().coerceIn(0f, 1f),
                 (p.y / scaledH.toDouble()).toFloat().coerceIn(0f, 1f)
             )
         }
-        return sortCorners(normalized)
+        return sortCornersOrNull(normalized)
     }
 
-    /**
-     * 把任意顺序的 4 个点重排成：左上、右上、右下、左下。
-     *
-     * 算法：以中心点为原点，按极角排序（atan2），起点选最接近左上方向的那一个。
-     */
-    private fun sortCorners(points: List<PointF>): List<PointF> {
-        require(points.size == 4)
-        val cx = points.sumOf { it.x.toDouble() } / 4.0
-        val cy = points.sumOf { it.y.toDouble() } / 4.0
-
-        // 按以中心为原点的极角排序（CCW），但我们需要 CW 起于左上：
-        // 用左上 = (x<cx, y<cy)、右上 = (x>cx, y<cy)、右下 = (x>cx, y>cy)、左下 = (x<cx, y>cy) 划分四象限
+    private fun sortCornersOrNull(points: List<PointF>): List<PointF>? {
+        if (points.size != 4) return null
         val tl = points.minBy { it.x + it.y }
         val br = points.maxBy { it.x + it.y }
-        val tr = points.minBy { it.y - it.x }   // y 小、x 大
-        val bl = points.maxBy { it.y - it.x }   // y 大、x 小
+        val tr = points.minBy { it.y - it.x }
+        val bl = points.maxBy { it.y - it.x }
         val sorted = listOf(tl, tr, br, bl)
-        // 万一有重复（异常形状），就退化为按象限近似
-        return if (sorted.distinct().size == 4) sorted else fallback()
+        return if (sorted.distinct().size == 4) sorted else null
     }
 
     private fun fallback(): List<PointF> {

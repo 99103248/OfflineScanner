@@ -54,7 +54,10 @@ fun AppNavGraph(
             ToolsScreen(
                 onScanClick = { navController.navigate(AppRoute.Camera.create()) },
                 onPickImageForOcr = { uri ->
-                    navController.navigate(AppRoute.Crop.create(uri))
+                    navController.navigate(AppRoute.Ocr.create(uri))
+                },
+                onQuickExport = { docId, formatExt ->
+                    navController.navigate(AppRoute.Export.create(docId, formatExt))
                 },
                 onFormatConvertClick = { navController.navigate(AppRoute.FormatConvert.path) },
                 onPickImageForEdit = { uri, mode ->
@@ -174,11 +177,16 @@ fun AppNavGraph(
 
         composable(
             route = AppRoute.Export.path,
-            arguments = listOf(navArgument("docId") { type = NavType.LongType })
+            arguments = listOf(
+                navArgument("docId") { type = NavType.LongType },
+                navArgument("autoFormat") { type = NavType.StringType; defaultValue = "" }
+            )
         ) { backStackEntry ->
             val docId = backStackEntry.arguments?.getLong("docId") ?: -1L
+            val autoFormat = backStackEntry.arguments?.getString("autoFormat").orEmpty()
             ExportScreen(
                 docId = docId,
+                autoFormat = autoFormat,
                 onBack = { navController.popBackStack() }
             )
         }

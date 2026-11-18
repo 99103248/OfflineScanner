@@ -29,7 +29,8 @@ data class Page(
     val processedPath: String,
     val thumbnailPath: String,
     val ocrText: String? = null,
-    val ocrLanguage: Language? = null
+    val ocrLanguage: Language? = null,
+    val ocrBlocks: List<TextBlock> = emptyList()
 )
 
 /** 支持的 OCR 语言 —— 后续扩展只需新增枚举值并实现对应 OcrEngine */
@@ -60,10 +61,18 @@ data class BoundingBox(
     val left: Int,
     val top: Int,
     val right: Int,
-    val bottom: Int
+    val bottom: Int,
+    val normLeft: Float = -1f,
+    val normTop: Float = -1f,
+    val normRight: Float = -1f,
+    val normBottom: Float = -1f
 ) {
     val width: Int get() = right - left
     val height: Int get() = bottom - top
+    val hasNormalized: Boolean
+        get() = normLeft in 0f..1f && normTop in 0f..1f &&
+            normRight > normLeft && normBottom > normTop &&
+            normRight <= 1.001f && normBottom <= 1.001f
 }
 
 /** 裁剪模式：标准矩形、四角透视拉平、自由手绘套索 */
