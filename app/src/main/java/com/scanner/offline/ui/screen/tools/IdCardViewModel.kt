@@ -47,6 +47,19 @@ class IdCardViewModel @Inject constructor(
         rebuildPreview()
     }
 
+    fun setFilterMode(mode: FilterMode) {
+        if (_state.value.filterMode == mode) return
+        _state.update { it.copy(filterMode = mode) }
+        rebuildPreview()
+    }
+
+    fun setWatermarkText(text: String) {
+        _state.update { it.copy(watermarkText = text) }
+        if (_state.value.frontPath != null && _state.value.backPath != null) {
+            rebuildPreview()
+        }
+    }
+
     fun save() {
         val full = composedFull
         if (full == null) {
@@ -98,9 +111,12 @@ class IdCardViewModel @Inject constructor(
     }
 
     private fun rebuildPreview() {
-        val frontPath = _state.value.frontPath
-        val backPath = _state.value.backPath
+        val current = _state.value
+        val frontPath = current.frontPath
+        val backPath = current.backPath
         if (frontPath == null || backPath == null) return
+        val filterMode = current.filterMode
+        val watermarkText = current.watermarkText
         previewJob?.cancel()
         previewJob = viewModelScope.launch {
             _state.update { it.copy(busy = true, error = null) }
@@ -111,7 +127,12 @@ class IdCardViewModel @Inject constructor(
                     val back = BitmapUtils.decode(File(backPath), maxSize = 2200)
                         ?: error("无法读取反面图片")
                     try {
-                        val full = composer.compose(front, back)
+                        val full = composer.compose(
+                            front = front,
+                            back = back,
+                            filterMode = filterMode,
+                            watermarkText = watermarkText
+                        )
                         val previewW = 620
                         val previewH = (full.height * previewW / full.width.toFloat()).toInt()
                         val preview = Bitmap.createScaledBitmap(full, previewW, previewH, true)
@@ -142,6 +163,8 @@ class IdCardViewModel @Inject constructor(
 data class IdCardUiState(
     val frontPath: String? = null,
     val backPath: String? = null,
+    val filterMode: FilterMode = FilterMode.ORIGINAL,
+    val watermarkText: String = "",
     val preview: Bitmap? = null,
     val busy: Boolean = false,
     val message: String? = null,

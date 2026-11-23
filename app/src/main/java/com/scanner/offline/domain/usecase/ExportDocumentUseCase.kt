@@ -33,7 +33,8 @@ class ExportDocumentUseCase @Inject constructor(
         tablesIfExcel: List<TableData>? = null,
         searchablePdf: Boolean = false,
         pdfPaper: PdfPaperSize = PdfPaperSize.A4,
-        pdfMaxImageDimension: Int = 3000
+        pdfMaxImageDimension: Int = 3000,
+        imageQuality: Int = 92
     ): List<ExportResult> = withContext(Dispatchers.IO) {
         val doc: Document = repo.get(docId) ?: error("文档不存在")
         if (doc.pages.isEmpty()) error("文档没有页面")
@@ -106,7 +107,7 @@ class ExportDocumentUseCase @Inject constructor(
                     val pageName = if (doc.pages.size == 1) doc.name else "${doc.name}_${index + 1}"
                     val sink = storage.createExportSink(pageName, format.extension, format.mimeType)
                     sink.openOutputStream().use { os ->
-                        exporter.convertImage(page.processedPath, format, os)
+                        exporter.convertImage(page.processedPath, format, os, quality = imageQuality.coerceIn(40, 100))
                     }
                     sink.toResult(format)
                 }

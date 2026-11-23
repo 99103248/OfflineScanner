@@ -3,8 +3,12 @@ package com.scanner.offline.ui.screen.camera
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -64,7 +68,20 @@ fun BurstProcessScreen(
     LaunchedEffect(Unit) { viewModel.start() }
     val state by viewModel.state.collectAsStateWithLifecycle()
     LaunchedEffect(state.docId) { state.docId?.let(onDone) }
-    Scaffold(topBar = { TopAppBar(title = { Text("连拍保存") }) }) { padding ->
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("连拍保存") },
+                navigationIcon = {
+                    if (!state.running) {
+                        IconButton(onClick = onBack) {
+                            Icon(Icons.AutoMirrored.Outlined.ArrowBack, contentDescription = "返回")
+                        }
+                    }
+                }
+            )
+        }
+    ) { padding ->
         Column(
             modifier = Modifier.fillMaxWidth().padding(padding).padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally

@@ -82,6 +82,7 @@ import com.scanner.offline.domain.model.CropStyle
 import com.scanner.offline.domain.model.ExportFormat
 import com.scanner.offline.domain.model.RedactStyle
 import com.scanner.offline.domain.model.WatermarkPosition
+import com.scanner.offline.engine.image.ColoredStroke
 import com.scanner.offline.engine.image.NormalizedCropRect
 import com.scanner.offline.util.ShareUtils
 import kotlin.math.hypot
@@ -121,9 +122,10 @@ fun ImageEditScreen(
         }
     }
 
-    val title = when (mode) {
+    val title = when (state.mode) {
         ImageEditMode.CROP -> stringResource(R.string.tool_crop)
-        ImageEditMode.MARK -> "批注与水印"
+        ImageEditMode.ADJUST -> "亮度与对比度"
+        ImageEditMode.MARK -> "签名 / 批注 / 水印"
         ImageEditMode.REDACT -> "打码脱敏"
         else -> stringResource(R.string.tool_flip)
     }
@@ -217,11 +219,18 @@ fun ImageEditScreen(
                 onRotateCcw = viewModel::rotate90Ccw,
                 onFreeAngle = viewModel::setFreeAngle,
                 onApplyAngle = viewModel::applyFreeAngle,
+                onBrightness = viewModel::setBrightness,
+                onContrast = viewModel::setContrast,
+                onApplyTone = viewModel::applyToneAdjust,
                 onFormat = viewModel::setFormat,
                 onQuality = viewModel::setQuality,
                 onWatermark = viewModel::setWatermark,
                 onWatermarkPos = viewModel::setWatermarkPos,
                 onApplyWatermark = viewModel::applyWatermark,
+                onPenColor = viewModel::setPenColor,
+                onPenWidth = viewModel::setPenWidthRatio,
+                onUndoStroke = viewModel::undoStroke,
+                onClearStrokes = viewModel::clearStrokes,
                 onApplyStrokes = viewModel::applyStrokes,
                 onRedactStyle = viewModel::setRedactStyle,
                 onUndoRedact = viewModel::undoRedactRect,
@@ -251,11 +260,18 @@ private fun EditToolbar(
     onRotateCcw: () -> Unit,
     onFreeAngle: (Float) -> Unit,
     onApplyAngle: () -> Unit,
+    onBrightness: (Float) -> Unit,
+    onContrast: (Float) -> Unit,
+    onApplyTone: () -> Unit,
     onFormat: (ExportFormat) -> Unit,
     onQuality: (Int) -> Unit,
     onWatermark: (String) -> Unit,
     onWatermarkPos: (WatermarkPosition) -> Unit,
     onApplyWatermark: () -> Unit,
+    onPenColor: (Int) -> Unit,
+    onPenWidth: (Float) -> Unit,
+    onUndoStroke: () -> Unit,
+    onClearStrokes: () -> Unit,
     onApplyStrokes: () -> Unit,
     onRedactStyle: (RedactStyle) -> Unit,
     onUndoRedact: () -> Unit,
@@ -272,10 +288,16 @@ private fun EditToolbar(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
             FilterChip(selected = mode == ImageEditMode.CROP, onClick = { onMode(ImageEditMode.CROP) }, label = { Text("裁剪") })
             FilterChip(selected = mode == ImageEditMode.FLIP, onClick = { onMode(ImageEditMode.FLIP) }, label = { Text("翻转") })
-            FilterChip(selected = mode == ImageEditMode.MARK, onClick = { onMode(ImageEditMode.MARK) }, label = { Text("批注") })
+            FilterChip(selected = mode == ImageEditMode.ADJUST, onClick = { onMode(ImageEditMode.ADJUST) }, label = { Text("调色") })
+            FilterChip(selected = mode == ImageEditMode.MARK, onClick = { onMode(ImageEditMode.MARK) }, label = { Text("签名/批注") })
             FilterChip(selected = mode == ImageEditMode.REDACT, onClick = { onMode(ImageEditMode.REDACT) }, label = { Text("打码") })
         }
 
@@ -352,9 +374,38 @@ private fun EditToolbar(
                         Icon(Icons.Outlined.Rotate90DegreesCcw, "逆时针", tint = Color.White)
                     }
                 }
+                ImageEditMode.ADJUST -> {
+                    TextButton(onClick = onApplyTone, enabled = !saving) {
+                        Text("应用调色", color = Color.White)
+                    }
+                }
                 ImageEditMode.MARK -> {
-                    TextButton(onClick = onApplyStrokes, enabled = !saving) {
-                        Text("应用批注", color = Color.White)
+                    listOf(
+                        android.graphics.Color.BLACK to "黑签",
+                        android.graphics.Color.rgb(21, 101, 192) to "蓝签",
+                        android.graphics.Color.RED to "红批"
+                    ).forEach { (c, label) ->
+                        FilterChip(
+                            selected = state.penColor == c,
+                            onClick = { onPenColor(c) },
+                            label = { Text(label) }
+                        )
+                    }
+                    listOf(0.003f to "细", 0.006f to "中", 0.011f to "粗").forEach { (w, label) ->
+                        FilterChip(
+                            selected = kotlin.math.abs(state.penWidthRatio - w) < 0.001f,
+                            onClick = { onPenWidth(w) },
+                            label = { Text(label) }
+                        )
+                    }
+                    TextButton(onClick = onUndoStroke, enabled = !saving && state.strokes.isNotEmpty()) {
+                        Text("撤销", color = Color.White)
+                    }
+                    TextButton(onClick = onClearStrokes, enabled = !saving && state.strokes.isNotEmpty()) {
+                        Text("清空", color = Color.White)
+                    }
+                    TextButton(onClick = onApplyStrokes, enabled = !saving && state.strokes.isNotEmpty()) {
+                        Text("应用签名", color = Color.White)
                     }
                     TextButton(onClick = onApplyWatermark, enabled = !saving && state.watermark.isNotBlank()) {
                         Text("加水印", color = Color.White)
@@ -398,23 +449,50 @@ private fun EditToolbar(
                 TextButton(onClick = onApplyAngle) { Text("旋转", color = Color.White) }
             }
         }
-        if (mode == ImageEditMode.MARK) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                BasicTextField(
-                    value = state.watermark,
-                    onValueChange = onWatermark,
-                    textStyle = TextStyle(color = Color.White),
-                    cursorBrush = SolidColor(Color.White),
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(8.dp),
-                    decorationBox = { inner ->
-                        Box {
-                            if (state.watermark.isEmpty()) Text("水印文字", color = Color.White.copy(0.5f))
-                            inner()
-                        }
-                    }
+        if (mode == ImageEditMode.ADJUST) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("亮度 ${state.brightness.toInt()}", color = Color.White, modifier = Modifier.width(88.dp))
+                Slider(
+                    value = state.brightness,
+                    onValueChange = onBrightness,
+                    valueRange = -80f..80f,
+                    modifier = Modifier.weight(1f)
                 )
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("对比 ${(state.contrast * 100).toInt()}%", color = Color.White, modifier = Modifier.width(88.dp))
+                Slider(
+                    value = state.contrast,
+                    onValueChange = onContrast,
+                    valueRange = 0.5f..2.0f,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+        if (mode == ImageEditMode.MARK) {
+            BasicTextField(
+                value = state.watermark,
+                onValueChange = onWatermark,
+                textStyle = TextStyle(color = Color.White),
+                cursorBrush = SolidColor(Color.White),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(8.dp))
+                    .padding(horizontal = 10.dp, vertical = 8.dp),
+                decorationBox = { inner ->
+                    Box {
+                        if (state.watermark.isEmpty()) Text("输入水印文字（支持全屏斜向平铺）", color = Color.White.copy(0.5f))
+                        inner()
+                    }
+                }
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 WatermarkPosition.entries.forEach { p ->
                     FilterChip(selected = state.watermarkPos == p, onClick = { onWatermarkPos(p) }, label = { Text(p.displayName) })
                 }
@@ -453,7 +531,7 @@ private fun UniversalCropEditor(
     cropRect: NormalizedCropRect,
     perspectiveCorners: List<PointF>,
     freeformPoints: List<PointF>,
-    strokes: List<List<Pair<Float, Float>>>,
+    strokes: List<ColoredStroke>,
     redactRects: List<NormalizedCropRect>,
     redactStyle: RedactStyle,
     onRectCornerMoved: (Int, Float, Float) -> Unit,
@@ -713,14 +791,20 @@ private fun UniversalCropEditor(
                 }
             }
 
-            strokes.forEach { pts ->
+            val minDisplayEdge = minOf(displayRect.width, displayRect.height).coerceAtLeast(1f)
+            strokes.forEach { stroke ->
+                val pts = stroke.points
                 if (pts.size < 2) return@forEach
                 val p = Path()
                 p.moveTo(displayRect.left + pts.first().first * displayRect.width, displayRect.top + pts.first().second * displayRect.height)
                 pts.drop(1).forEach { (x, y) ->
                     p.lineTo(displayRect.left + x * displayRect.width, displayRect.top + y * displayRect.height)
                 }
-                drawPath(p, color = Color.Red, style = Stroke(width = 6f))
+                drawPath(
+                    p,
+                    color = Color(stroke.color),
+                    style = Stroke(width = (minDisplayEdge * stroke.widthRatio).coerceAtLeast(2.5f))
+                )
             }
 
             if (isRedactMode) {

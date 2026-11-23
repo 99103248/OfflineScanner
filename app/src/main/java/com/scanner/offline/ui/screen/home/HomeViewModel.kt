@@ -37,6 +37,9 @@ class HomeViewModel @Inject constructor(
     private val _sort = MutableStateFlow(settings.settings.value.sort)
     val sort: StateFlow<DocumentSort> = _sort.asStateFlow()
 
+    private val _favoritesOnly = MutableStateFlow(false)
+    val favoritesOnly: StateFlow<Boolean> = _favoritesOnly.asStateFlow()
+
     /** 设置页配置的默认视图（持续订阅，设置变更后立即生效） */
     val gridViewSetting: StateFlow<Boolean> = settings.settings
         .map { it.gridView }
@@ -65,13 +68,22 @@ class HomeViewModel @Inject constructor(
 
     val documents: StateFlow<List<Document>> = combine(
         _query.debounce(250),
-        _sort
-    ) { q, s -> q.trim() to s }
-        .flatMapLatest { (q, s) -> repo.observeAll(q).let { flow -> sortFlow(flow, s) } }
+        _sort,
+        _favoritesOnly
+    ) { q, s, favOnly -> Triple(q.trim(), s, favOnly) }
+        .flatMapLatest { (q, s, favOnly) ->
+            repo.observeAll(q)
+                .map { list -> if (favOnly) list.filter { it.isFavorite } else list }
+                .let { flow -> sortFlow(flow, s) }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     fun setQuery(q: String) {
         _query.value = q
+    }
+
+    fun setFavoritesOnly(only: Boolean) {
+        _favoritesOnly.value = only
     }
 
     fun setSort(sort: DocumentSort) {

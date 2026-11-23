@@ -2,9 +2,15 @@ package com.scanner.offline.ui.screen.document
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,9 +25,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowLeft
+import androidx.compose.material.icons.automirrored.outlined.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.ArrowDownward
 import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.AutoFixHigh
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material.icons.outlined.Crop
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.DeleteOutline
@@ -42,6 +52,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -57,25 +68,34 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.scanner.offline.R
+import com.scanner.offline.domain.model.FilterMode
 import com.scanner.offline.domain.model.Page
 import com.scanner.offline.util.PrintUtils
 import com.scanner.offline.util.Time
 import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun DocumentDetailScreen(
     docId: Long,
@@ -95,6 +115,8 @@ fun DocumentDetailScreen(
     var renameOpen by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
     var pageToDelete by remember { mutableStateOf<Page?>(null) }
+    var pageToFilter by remember { mutableStateOf<Page?>(null) }
+    var viewerPageIndex by remember { mutableStateOf<Int?>(null) }
 
     val pickImages = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetMultipleContents()
@@ -236,8 +258,10 @@ fun DocumentDetailScreen(
                             index = index,
                             pageCount = current.pages.size,
                             enabled = !state.busy,
+                            onPreviewClick = { viewerPageIndex = index },
                             onOcrClick = { onOcrClick(page.processedPath, page.id) },
                             onEditClick = { onEditClick(page.processedPath, page.id) },
+                            onFilterClick = { pageToFilter = page },
                             onMoveUp = { viewModel.movePage(docId, page.id, -1) },
                             onMoveDown = { viewModel.movePage(docId, page.id, 1) },
                             onRotate = { viewModel.rotatePage(docId, page.id) },
@@ -316,6 +340,184 @@ fun DocumentDetailScreen(
             }
         )
     }
+
+    pageToFilter?.let { page ->
+        AlertDialog(
+            onDismissRequest = { pageToFilter = null },
+            title = { Text("重新应用滤镜") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        "基于保存的原图无损重新生成第 ${page.index + 1} 页画面：",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        FilterMode.entries.forEach { mode ->
+                            FilterChip(
+                                selected = false,
+                                onClick = {
+                                    viewModel.applyFilter(docId, page.id, mode)
+                                    pageToFilter = null
+                                },
+                                label = { Text(mode.displayName) }
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { pageToFilter = null }) { Text("关闭") }
+            }
+        )
+    }
+
+    val pagesList = state.doc?.pages.orEmpty()
+    viewerPageIndex?.let { startIdx ->
+        if (pagesList.isNotEmpty() && startIdx in pagesList.indices) {
+            ZoomablePageViewerDialog(
+                pages = pagesList,
+                initialIndex = startIdx,
+                onDismiss = { viewerPageIndex = null },
+                onOcrClick = { page ->
+                    viewerPageIndex = null
+                    onOcrClick(page.processedPath, page.id)
+                },
+                onEditClick = { page ->
+                    viewerPageIndex = null
+                    onEditClick(page.processedPath, page.id)
+                },
+                onFilterClick = { page ->
+                    viewerPageIndex = null
+                    pageToFilter = page
+                }
+            )
+        }
+    }
+}
+
+@Composable
+private fun ZoomablePageViewerDialog(
+    pages: List<Page>,
+    initialIndex: Int,
+    onDismiss: () -> Unit,
+    onOcrClick: (Page) -> Unit,
+    onEditClick: (Page) -> Unit,
+    onFilterClick: (Page) -> Unit
+) {
+    var currentIndex by remember(initialIndex, pages.size) {
+        mutableIntStateOf(initialIndex.coerceIn(0, pages.lastIndex))
+    }
+    var scale by remember(currentIndex) { mutableFloatStateOf(1f) }
+    var offset by remember(currentIndex) { mutableStateOf(Offset.Zero) }
+    val page = pages[currentIndex]
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            AsyncImage(
+                model = File(page.processedPath),
+                contentDescription = "第 ${currentIndex + 1} 页大图预览",
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(currentIndex) {
+                        detectTapGestures(
+                            onDoubleTap = {
+                                if (scale > 1.2f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                } else {
+                                    scale = 2.5f
+                                }
+                            }
+                        )
+                    }
+                    .pointerInput(currentIndex) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val newScale = (scale * zoom).coerceIn(1f, 4f)
+                            scale = newScale
+                            offset = if (newScale > 1.02f) {
+                                Offset(offset.x + pan.x, offset.y + pan.y)
+                            } else {
+                                Offset.Zero
+                            }
+                        }
+                    }
+                    .graphicsLayer(
+                        scaleX = scale,
+                        scaleY = scale,
+                        translationX = offset.x,
+                        translationY = offset.y
+                    )
+            )
+
+            // 顶部栏
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.TopCenter)
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .padding(horizontal = 8.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(onClick = onDismiss) {
+                    Icon(Icons.Outlined.Close, contentDescription = "关闭预览", tint = Color.White)
+                }
+                Text(
+                    text = "第 ${currentIndex + 1} / ${pages.size} 页（双击或双指缩放）",
+                    color = Color.White,
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+
+            // 底部翻页与快捷操作栏
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(Color.Black.copy(alpha = 0.72f))
+                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                IconButton(
+                    onClick = { if (currentIndex > 0) currentIndex-- },
+                    enabled = currentIndex > 0
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowLeft,
+                        contentDescription = "上一页",
+                        tint = if (currentIndex > 0) Color.White else Color.Gray
+                    )
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { onFilterClick(page) }) { Text("滤镜", color = Color.White) }
+                    TextButton(onClick = { onEditClick(page) }) { Text("编辑", color = Color.White) }
+                    TextButton(onClick = { onOcrClick(page) }) { Text("OCR", color = Color.White) }
+                }
+                IconButton(
+                    onClick = { if (currentIndex < pages.lastIndex) currentIndex++ },
+                    enabled = currentIndex < pages.lastIndex
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Outlined.KeyboardArrowRight,
+                        contentDescription = "下一页",
+                        tint = if (currentIndex < pages.lastIndex) Color.White else Color.Gray
+                    )
+                }
+            }
+        }
+    }
 }
 
 @Composable
@@ -324,8 +526,10 @@ private fun PageCard(
     index: Int,
     pageCount: Int,
     enabled: Boolean,
+    onPreviewClick: () -> Unit,
     onOcrClick: () -> Unit,
     onEditClick: () -> Unit,
+    onFilterClick: () -> Unit,
     onMoveUp: () -> Unit,
     onMoveDown: () -> Unit,
     onRotate: () -> Unit,
@@ -342,6 +546,7 @@ private fun PageCard(
                 .fillMaxWidth()
                 .height(220.dp)
                 .clip(RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+                .clickable(onClick = onPreviewClick)
         ) {
             if (page.processedPath.isNotBlank()) {
                 AsyncImage(
@@ -381,6 +586,11 @@ private fun PageCard(
                     Icon(Icons.Outlined.MoreVert, contentDescription = "页面操作")
                 }
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("重新应用滤镜") },
+                        leadingIcon = { Icon(Icons.Outlined.AutoFixHigh, null) },
+                        onClick = { menu = false; onFilterClick() }
+                    )
                     DropdownMenuItem(
                         text = { Text("上移") },
                         leadingIcon = { Icon(Icons.Outlined.ArrowUpward, null) },

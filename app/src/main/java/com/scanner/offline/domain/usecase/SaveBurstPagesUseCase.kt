@@ -17,9 +17,14 @@ class SaveBurstPagesUseCase @Inject constructor(
     private val edgeDetector: EdgeDetector,
     private val corrector: PerspectiveCorrector,
     private val storage: StorageManager,
+    private val settings: com.scanner.offline.data.settings.SettingsRepository,
     @ApplicationContext private val context: android.content.Context
 ) {
-    suspend operator fun invoke(imageUris: List<String>, documentName: String): Long =
+    suspend operator fun invoke(
+        imageUris: List<String>,
+        documentName: String,
+        filterMode: FilterMode = settings.settings.value.defaultFilter
+    ): Long =
         withContext(Dispatchers.IO) {
             require(imageUris.isNotEmpty()) { "没有拍摄的页面" }
             var docId: Long? = null
@@ -28,21 +33,21 @@ class SaveBurstPagesUseCase @Inject constructor(
                 var corrected: Bitmap? = null
                 var clamped: Bitmap? = null
                 try {
-                    val corners = edgeDetector.detect(bmp)
-                    corrected = corrector.correct(bmp, corners)
+                    val corners = edgeDetector.detectQuadOrNull(bmp)
+                    corrected = if (corners != null) corrector.correct(bmp, corners) else bmp
                     clamped = corrector.clamp(corrected, 2400)
                     val tmp = storage.newCacheImage("burst")
                     storage.saveBitmap(clamped, tmp)
                     docId = savePage(
                         processedBitmapPath = tmp.absolutePath,
-                        filterMode = FilterMode.ORIGINAL,
+                        filterMode = filterMode,
                         docId = docId,
                         documentName = documentName
                     )
                 } finally {
-                    bmp.recycle()
+                    if (clamped !== null && clamped !== corrected && clamped !== bmp) clamped.recycle()
                     if (corrected !== null && corrected !== bmp) corrected.recycle()
-                    if (clamped !== null && clamped !== corrected) clamped.recycle()
+                    bmp.recycle()
                     storage.deleteCacheFileIfTemp(uriString)
                 }
             }

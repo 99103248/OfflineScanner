@@ -61,7 +61,8 @@ class ExportViewModel @Inject constructor(
                     ocrLanguage = Language.AUTO,
                     searchablePdf = searchablePdf,
                     pdfPaper = pdfPaper ?: appSettings.pdfPaper,
-                    pdfMaxImageDimension = pdfMaxImageDimension ?: appSettings.pdfMaxImageDimension
+                    pdfMaxImageDimension = pdfMaxImageDimension ?: appSettings.pdfMaxImageDimension,
+                    imageQuality = appSettings.exportQuality
                 )
             }
                 .onSuccess { results ->
@@ -92,7 +93,8 @@ class ExportViewModel @Inject constructor(
                 _state.value = _state.value.copy(running = false, error = "无法读取图片")
                 return@launch
             }
-            runCatching { convertImage(sourcePath, format, baseName) }
+            val quality = settings.settings.value.exportQuality
+            runCatching { convertImage(sourcePath, format, baseName, quality = quality) }
                 .onSuccess { r ->
                     _state.value = _state.value.copy(
                         running = false, lastResult = r, lastResults = listOf(r), lastFormat = format
@@ -122,12 +124,13 @@ class ExportViewModel @Inject constructor(
             }
             val (path, type) = resolved
             _state.value = _state.value.copy(inputType = type)
-            val effectiveFormat = if (type == InputDocumentType.IMAGE) format else format
+            val effectiveFormat = format
+            val quality = settings.settings.value.exportQuality
             runCatching {
                 if (type == InputDocumentType.IMAGE) {
-                    listOf(convertImage(path, effectiveFormat, baseName))
+                    listOf(convertImage(path, effectiveFormat, baseName, quality = quality))
                 } else {
-                    convertFileToImages(path, type, effectiveFormat, baseName, pdfLayout)
+                    convertFileToImages(path, type, effectiveFormat, baseName, pdfLayout, quality = quality)
                 }
             }.onSuccess { results ->
                 _state.value = _state.value.copy(

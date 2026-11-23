@@ -56,7 +56,7 @@ internal object OoxmlWriter {
             val body = StringBuilder()
             texts.forEachIndexed { idx, text ->
                 if (idx > 0) {
-                    body.append("<w:p/>")
+                    body.append("<w:p><w:r><w:br w:type=\"page\"/></w:r></w:p>")
                 }
                 text.split('\n').forEach { line ->
                     body.append("<w:p><w:r><w:t xml:space=\"preserve\">")
@@ -243,10 +243,24 @@ internal object OoxmlWriter {
         closeEntry()
     }
 
-    private fun escapeXml(s: String): String =
-        s.replace("&", "&amp;")
-            .replace("<", "&lt;")
-            .replace(">", "&gt;")
-            .replace("\"", "&quot;")
-            .replace("'", "&apos;")
+    /**
+     * 过滤 XML 1.0 非法控制字符（保留 \t / \n / \r）并转义特殊实体，
+     * 防止 OCR 偶发异常控制符导致 Word / Excel / WPS 无法打开导出文件。
+     */
+    private fun escapeXml(s: String): String = buildString(s.length) {
+        for (ch in s) {
+            val code = ch.code
+            val validXmlChar = code == 0x9 || code == 0xA || code == 0xD ||
+                (code in 0x20..0xD7FF) || (code in 0xE000..0xFFFD)
+            if (!validXmlChar) continue
+            when (ch) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                '\'' -> append("&apos;")
+                else -> append(ch)
+            }
+        }
+    }
 }

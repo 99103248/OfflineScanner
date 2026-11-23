@@ -36,4 +36,27 @@ class OoxmlReaderTest {
         val text = OoxmlReader.parseDocumentXml(xml).single()
         assertEquals("a&b<c>", text)
     }
+
+    @Test
+    fun `parseDocumentXml 同时兼容旧版空段落分页与新版 w_br 分页符`() {
+        val legacyXml = """
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:body>
+            <w:p><w:r><w:t>旧版第一页</w:t></w:r></w:p><w:p/><w:p><w:r><w:t>旧版第二页</w:t></w:r></w:p>
+            </w:body>
+            </w:document>
+        """.trimIndent()
+        val legacyPages = OoxmlReader.parseDocumentXml(legacyXml)
+        assertEquals(listOf("旧版第一页", "旧版第二页"), legacyPages)
+
+        val modernXml = """
+            <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+            <w:body>
+            <w:p><w:r><w:t>新版第一页</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>新版第二页</w:t></w:r></w:p>
+            </w:body>
+            </w:document>
+        """.trimIndent()
+        val modernPages = OoxmlReader.parseDocumentXml(modernXml)
+        assertEquals(listOf("新版第一页", "新版第二页"), modernPages)
+    }
 }

@@ -208,6 +208,7 @@ fun AppNavGraph(
             val pageId = backStackEntry.arguments?.getLong("pageId") ?: -1L
             val mode = when (modeArg.lowercase()) {
                 "flip" -> ImageEditMode.FLIP
+                "adjust" -> ImageEditMode.ADJUST
                 "mark" -> ImageEditMode.MARK
                 "redact" -> ImageEditMode.REDACT
                 else -> ImageEditMode.CROP

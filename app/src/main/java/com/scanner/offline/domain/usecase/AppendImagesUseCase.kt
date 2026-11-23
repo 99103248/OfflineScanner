@@ -43,8 +43,8 @@ class AppendImagesUseCase @Inject constructor(
             var corrected: Bitmap? = null
             var clamped: Bitmap? = null
             try {
-                val corners = edgeDetector.detect(bmp)
-                corrected = corrector.correct(bmp, corners)
+                val corners = edgeDetector.detectQuadOrNull(bmp)
+                corrected = if (corners != null) corrector.correct(bmp, corners) else bmp
                 clamped = corrector.clamp(corrected, 2400)
                 val tmp = storage.newCacheImage("append")
                 storage.saveBitmap(clamped, tmp)
@@ -58,9 +58,9 @@ class AppendImagesUseCase @Inject constructor(
             } catch (_: Exception) {
                 // 单张失败不影响后续图片
             } finally {
-                bmp.recycle()
+                if (clamped != null && clamped !== corrected && clamped !== bmp) clamped.recycle()
                 if (corrected != null && corrected !== bmp) corrected.recycle()
-                if (clamped != null && clamped !== corrected) clamped.recycle()
+                bmp.recycle()
                 storage.deleteCacheFileIfTemp(uriString)
                 onProgress(index + 1, imageUris.size)
             }

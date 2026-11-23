@@ -9,7 +9,7 @@ import java.util.zip.ZipFile
 internal object OoxmlReader {
 
     private val WT_REGEX = Regex("<w:t[^>]*>([\\s\\S]*?)</w:t>")
-    private val PAGE_BREAK = Regex("<w:p\\s*/>")
+    private val PAGE_BREAK = Regex("<w:p\\s*/>|<w:p>\\s*<w:r>\\s*<w:br\\s+w:type=\"page\"\\s*/>\\s*</w:r>\\s*</w:p>")
 
     fun readDocxTexts(file: File): List<String> {
         ZipFile(file).use { zip ->

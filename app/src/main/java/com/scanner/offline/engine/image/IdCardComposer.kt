@@ -3,28 +3,43 @@ package com.scanner.offline.engine.image
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.RectF
+import com.scanner.offline.domain.model.FilterMode
+import com.scanner.offline.domain.model.WatermarkPosition
 import javax.inject.Inject
 import kotlin.math.max
 
 /**
  * 证件扫描合成：把身份证 / 护照等正反面按常见排版合成到一张 A4 竖版页面。
  *
- * 输出 1240×1754（A4 @150dpi），两张卡片等比铺满各自的 1000×630 区域并居中裁切。
+ * 输出 1240×1754（A4 @150dpi），两张卡片自动校正、竖拍自动扶正并等比铺满各自的 1000×631 区域。
+ * 可选叠加滤镜（如黑白复印件/去阴影）与全屏斜向防盗水印。
  */
 class IdCardComposer @Inject constructor(
     private val edgeDetector: EdgeDetector,
-    private val corrector: PerspectiveCorrector
+    private val corrector: PerspectiveCorrector,
+    private val imageFilter: ImageFilter,
+    private val imageTransform: ImageTransform
 ) {
 
-    fun compose(front: Bitmap, back: Bitmap): Bitmap {
+    constructor(edgeDetector: EdgeDetector, corrector: PerspectiveCorrector) :
+        this(edgeDetector, corrector, ImageFilter(), ImageTransform(corrector))
+
+    fun compose(
+        front: Bitmap,
+        back: Bitmap,
+        filterMode: FilterMode = FilterMode.ORIGINAL,
+        watermarkText: String = "",
+        watermarkAlpha: Int = 72
+    ): Bitmap {
         val page = Bitmap.createBitmap(PAGE_WIDTH, PAGE_HEIGHT, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(page)
         canvas.drawColor(Color.WHITE)
 
-        val frontCard = prepareCard(front)
-        val backCard = prepareCard(back)
+        val frontCard = prepareCard(front, filterMode)
+        val backCard = prepareCard(back, filterMode)
         try {
             drawCard(canvas, frontCard, top = 190f)
             drawCard(canvas, backCard, top = 190f + CARD_HEIGHT + 90f)
@@ -32,15 +47,44 @@ class IdCardComposer @Inject constructor(
             if (frontCard !== front) frontCard.recycle()
             if (backCard !== back) backCard.recycle()
         }
-        return page
+
+        if (watermarkText.isBlank()) return page
+
+        val watermarked = imageTransform.applyWatermark(
+            source = page,
+            text = watermarkText.trim(),
+            position = WatermarkPosition.TILED,
+            alpha = watermarkAlpha.coerceIn(30, 180),
+            colorRgb = Color.rgb(60, 72, 88)
+        )
+        page.recycle()
+        return watermarked
     }
 
-    /** 自动找边 + 透视矫正；失败则用原图。 */
-    private fun prepareCard(src: Bitmap): Bitmap {
-        return runCatching {
-            val corners = edgeDetector.detect(src)
-            corrector.correct(src, corners)
+    /** 自动找真实证件边框并透视矫正；未检测到边框时保留原图不误裁；竖拍证件自动扶正为横版。 */
+    private fun prepareCard(src: Bitmap, filterMode: FilterMode): Bitmap {
+        var current: Bitmap = runCatching {
+            val corners = edgeDetector.detectQuadOrNull(src)
+            if (corners != null) corrector.correct(src, corners) else src
         }.getOrElse { src }
+
+        // 身份证等标准证件为横版（约 85.6mm × 54mm）；若用户竖着拍导致高大于宽，自动顺时针旋转 90°
+        if (current.height > current.width * 1.15f) {
+            val rotated = Bitmap.createBitmap(
+                current, 0, 0, current.width, current.height,
+                Matrix().apply { postRotate(90f) },
+                true
+            )
+            if (current !== src && rotated !== current) current.recycle()
+            current = rotated
+        }
+
+        if (filterMode != FilterMode.ORIGINAL) {
+            val filtered = imageFilter.apply(current, filterMode)
+            if (current !== src && filtered !== current) current.recycle()
+            current = filtered
+        }
+        return current
     }
 
     private fun drawCard(canvas: Canvas, src: Bitmap, top: Float) {

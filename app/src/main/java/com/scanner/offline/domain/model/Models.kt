@@ -96,7 +96,8 @@ enum class WatermarkPosition(val displayName: String) {
     TOP_RIGHT("右上"),
     BOTTOM_LEFT("左下"),
     BOTTOM_RIGHT("右下"),
-    CENTER("居中")
+    CENTER("居中"),
+    TILED("全屏平铺")
 }
 
 enum class StitchMode(val displayName: String) {
@@ -111,7 +112,8 @@ enum class FilterMode(val displayName: String) {
     ENHANCE("增强"),
     GRAYSCALE("灰度"),
     BLACK_WHITE("黑白"),
-    REMOVE_SHADOW("去阴影")
+    REMOVE_SHADOW("去阴影"),
+    REMOVE_HANDWRITING("去笔迹")
 }
 
 /** 导出格式 */

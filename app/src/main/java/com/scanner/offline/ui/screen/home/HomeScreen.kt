@@ -45,6 +45,7 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -92,6 +93,7 @@ fun HomeScreen(
     val query by viewModel.query.collectAsStateWithLifecycle()
     val selected by viewModel.selected.collectAsStateWithLifecycle()
     val sort by viewModel.sort.collectAsStateWithLifecycle()
+    val favoritesOnly by viewModel.favoritesOnly.collectAsStateWithLifecycle()
     val ui by viewModel.ui.collectAsStateWithLifecycle()
     val defaultGrid by viewModel.gridViewSetting.collectAsStateWithLifecycle()
 
@@ -216,9 +218,36 @@ fun HomeScreen(
                     singleLine = true,
                     shape = RoundedCornerShape(12.dp)
                 )
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    FilterChip(
+                        selected = !favoritesOnly,
+                        onClick = { viewModel.setFavoritesOnly(false) },
+                        label = { Text("全部") }
+                    )
+                    FilterChip(
+                        selected = favoritesOnly,
+                        onClick = { viewModel.setFavoritesOnly(true) },
+                        label = { Text("收藏") },
+                        leadingIcon = { Icon(Icons.Outlined.Star, null, modifier = Modifier.size(16.dp)) }
+                    )
+                    Spacer(Modifier.weight(1f))
+                    if (docs.isNotEmpty()) {
+                        Text(
+                            text = "${docs.size} 份文档",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                        )
+                    }
+                }
             }
             if (docs.isEmpty()) {
-                EmptyView(padding, query.isNotEmpty())
+                EmptyView(padding, query.isNotEmpty() || favoritesOnly)
             } else if (gridView) {
                 DocumentGrid(
                     docs = docs,
@@ -226,7 +255,13 @@ fun HomeScreen(
                     selectionMode = selectionMode,
                     bottomPadding = padding.calculateBottomPadding() + 96.dp,
                     onClick = { id -> if (selectionMode) viewModel.toggleSelection(id) else onDocumentClick(id) },
-                    onLongClick = { id -> viewModel.toggleSelection(id) }
+                    onLongClick = { id -> viewModel.toggleSelection(id) },
+                    onDelete = viewModel::delete,
+                    onToggleFavorite = viewModel::setFavorite,
+                    onRename = { doc ->
+                        renameTarget = doc
+                        renameText = doc.name
+                    }
                 )
             } else {
                 DocumentList(
@@ -446,7 +481,10 @@ private fun DocumentGrid(
     selectionMode: Boolean,
     bottomPadding: androidx.compose.ui.unit.Dp,
     onClick: (Long) -> Unit,
-    onLongClick: (Long) -> Unit
+    onLongClick: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
+    onToggleFavorite: (Long, Boolean) -> Unit,
+    onRename: (Document) -> Unit
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
@@ -458,8 +496,12 @@ private fun DocumentGrid(
             GridItem(
                 doc = doc,
                 selected = doc.id in selected,
+                selectionMode = selectionMode,
                 onClick = { onClick(doc.id) },
-                onLongClick = { onLongClick(doc.id) }
+                onLongClick = { onLongClick(doc.id) },
+                onDelete = { onDelete(doc.id) },
+                onToggleFavorite = { onToggleFavorite(doc.id, !doc.isFavorite) },
+                onRename = { onRename(doc) }
             )
         }
     }
@@ -470,8 +512,12 @@ private fun DocumentGrid(
 private fun GridItem(
     doc: Document,
     selected: Boolean,
+    selectionMode: Boolean,
     onClick: () -> Unit,
-    onLongClick: () -> Unit
+    onLongClick: () -> Unit,
+    onDelete: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onRename: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -513,19 +559,53 @@ private fun GridItem(
                     )
                 }
             }
-            Column(modifier = Modifier.padding(10.dp)) {
-                Text(
-                    text = doc.name,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${doc.pageCount} 页 · ${Time.formatShort(doc.updatedAt)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                    maxLines = 1
-                )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 10.dp, top = 6.dp, bottom = 6.dp, end = 2.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = doc.name,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${doc.pageCount} 页 · ${Time.formatShort(doc.updatedAt)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                        maxLines = 1
+                    )
+                }
+                if (!selectionMode) {
+                    Box {
+                        var menu by remember { mutableStateOf(false) }
+                        IconButton(onClick = { menu = true }, modifier = Modifier.size(32.dp)) {
+                            Icon(Icons.Outlined.MoreVert, contentDescription = "文档操作", modifier = Modifier.size(18.dp))
+                        }
+                        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                            DropdownMenuItem(
+                                text = { Text(stringResource(if (doc.isFavorite) R.string.action_unfavorite else R.string.action_favorite)) },
+                                leadingIcon = {
+                                    Icon(if (doc.isFavorite) Icons.Outlined.StarBorder else Icons.Outlined.Star, null)
+                                },
+                                onClick = { menu = false; onToggleFavorite() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("重命名") },
+                                leadingIcon = { Icon(Icons.Outlined.DriveFileRenameOutline, null) },
+                                onClick = { menu = false; onRename() }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(R.string.action_delete)) },
+                                leadingIcon = { Icon(Icons.Outlined.Delete, null) },
+                                onClick = { menu = false; onDelete() }
+                            )
+                        }
+                    }
+                }
             }
         }
     }

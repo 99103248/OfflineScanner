@@ -91,6 +91,43 @@ class CropViewModel @Inject constructor(
         _state.value = cur.copy(corners = newPts)
     }
 
+    fun autoDetect() {
+        val cur = _state.value as? CropState.Ready ?: return
+        viewModelScope.launch {
+            val corners = withContext(Dispatchers.Default) { edgeDetector.detect(cur.bitmap) }
+            _state.value = cur.copy(corners = corners)
+        }
+    }
+
+    fun resetToFull() {
+        val cur = _state.value as? CropState.Ready ?: return
+        _state.value = cur.copy(
+            corners = listOf(
+                PointF(0f, 0f),
+                PointF(1f, 0f),
+                PointF(1f, 1f),
+                PointF(0f, 1f)
+            )
+        )
+    }
+
+    fun rotate90(clockwise: Boolean) {
+        val cur = _state.value as? CropState.Ready ?: return
+        viewModelScope.launch {
+            val (rotated, corners) = withContext(Dispatchers.Default) {
+                val matrix = android.graphics.Matrix().apply {
+                    postRotate(if (clockwise) 90f else -90f)
+                }
+                val next = Bitmap.createBitmap(
+                    cur.bitmap, 0, 0, cur.bitmap.width, cur.bitmap.height, matrix, true
+                )
+                val nextCorners = edgeDetector.detect(next)
+                next to nextCorners
+            }
+            _state.value = CropState.Ready(rotated, corners)
+        }
+    }
+
     /** 完成裁剪，输出处理后的图片路径 */
     fun confirm(onDone: (String) -> Unit, onError: (String) -> Unit) {
         val cur = _state.value as? CropState.Ready ?: return
@@ -99,9 +136,14 @@ class CropViewModel @Inject constructor(
                 runCatching {
                     val corrected = corrector.correct(cur.bitmap, cur.corners)
                     val clamped = corrector.clamp(corrected, 2400)
-                    val tmp = storage.newCacheImage("crop")
-                    storage.saveBitmap(clamped, tmp)
-                    tmp
+                    try {
+                        val tmp = storage.newCacheImage("crop")
+                        storage.saveBitmap(clamped, tmp)
+                        tmp
+                    } finally {
+                        if (clamped !== corrected) corrected.recycle()
+                        clamped.recycle()
+                    }
                 }
             }
             outFile.fold(

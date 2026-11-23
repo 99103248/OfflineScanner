@@ -31,9 +31,10 @@ import javax.inject.Inject
 import android.graphics.PointF
 import com.scanner.offline.domain.model.CropStyle
 import com.scanner.offline.domain.model.RedactStyle
+import com.scanner.offline.engine.image.ColoredStroke
 import com.scanner.offline.engine.image.EdgeDetector
 
-enum class ImageEditMode { CROP, FLIP, MARK, REDACT }
+enum class ImageEditMode { CROP, FLIP, ADJUST, MARK, REDACT }
 
 @HiltViewModel
 class ImageEditViewModel @Inject constructor(
@@ -276,6 +277,23 @@ class ImageEditViewModel @Inject constructor(
         _state.update { it.copy(freeAngle = 0f) }
     }
 
+    fun setBrightness(value: Float) {
+        _state.update { it.copy(brightness = value.coerceIn(-80f, 80f)) }
+    }
+
+    fun setContrast(value: Float) {
+        _state.update { it.copy(contrast = value.coerceIn(0.5f, 2.0f)) }
+    }
+
+    fun applyToneAdjust() {
+        val cur = _state.value
+        if (kotlin.math.abs(cur.brightness) < 0.5f && kotlin.math.abs(cur.contrast - 1f) < 0.01f) return
+        val b = cur.brightness
+        val c = cur.contrast
+        mutate { src -> transform.adjustTone(src, b, c) }
+        _state.update { it.copy(brightness = 0f, contrast = 1f) }
+    }
+
     fun setFormat(format: ExportFormat) {
         _state.update { it.copy(format = format) }
     }
@@ -296,27 +314,50 @@ class ImageEditViewModel @Inject constructor(
         val text = _state.value.watermark
         if (text.isBlank()) return
         val pos = _state.value.watermarkPos
-        mutate { transform.applyWatermark(it, text, pos) }
+        val alpha = if (pos == WatermarkPosition.TILED) 76 else 140
+        val colorRgb = if (pos == WatermarkPosition.TILED) Color.rgb(60, 72, 88) else Color.WHITE
+        mutate { transform.applyWatermark(it, text, pos, alpha = alpha, colorRgb = colorRgb) }
+    }
+
+    fun setPenColor(color: Int) {
+        _state.update { it.copy(penColor = color) }
+    }
+
+    fun setPenWidthRatio(ratio: Float) {
+        _state.update { it.copy(penWidthRatio = ratio.coerceIn(0.002f, 0.02f)) }
     }
 
     fun addStrokePoint(x: Float, y: Float, newStroke: Boolean) {
         _state.update { cur ->
             val strokes = cur.strokes.toMutableList()
             if (newStroke || strokes.isEmpty()) {
-                strokes += listOf(x to y)
+                strokes += ColoredStroke(
+                    points = listOf(x to y),
+                    color = cur.penColor,
+                    widthRatio = cur.penWidthRatio
+                )
             } else {
-                val last = strokes.last().toMutableList()
-                last += x to y
-                strokes[strokes.lastIndex] = last
+                val last = strokes.last()
+                strokes[strokes.lastIndex] = last.copy(points = last.points + (x to y))
             }
             cur.copy(strokes = strokes)
         }
     }
 
+    fun undoStroke() {
+        _state.update {
+            if (it.strokes.isEmpty()) it else it.copy(strokes = it.strokes.dropLast(1))
+        }
+    }
+
+    fun clearStrokes() {
+        _state.update { it.copy(strokes = emptyList()) }
+    }
+
     fun applyStrokes() {
         val strokes = _state.value.strokes
         if (strokes.isEmpty()) return
-        mutate { transform.bakeStrokes(it, strokes) }
+        mutate { transform.bakeColoredStrokes(it, strokes) }
         _state.update { it.copy(strokes = emptyList()) }
     }
 
@@ -365,7 +406,9 @@ class ImageEditViewModel @Inject constructor(
                     error = null,
                     strokes = emptyList(),
                     redactRects = emptyList(),
-                    freeAngle = 0f
+                    freeAngle = 0f,
+                    brightness = 0f,
+                    contrast = 1f
                 )
             }
         }
@@ -373,36 +416,44 @@ class ImageEditViewModel @Inject constructor(
 
     fun save() {
         val cur = _state.value
-        var bmp = cur.working ?: return
+        val startBmp = cur.working ?: return
+        var bmp = startBmp
         viewModelScope.launch {
             _state.update { it.copy(saving = true, error = null) }
             runCatching {
                 withContext(Dispatchers.Default) {
+                    fun advance(next: Bitmap) {
+                        if (bmp !== startBmp && bmp !== next) bmp.recycle()
+                        bmp = next
+                    }
                     if (cur.mode == ImageEditMode.CROP) {
                         when (cur.cropStyle) {
                             CropStyle.RECTANGLE -> {
                                 if (!cur.cropRect.isFull) {
-                                    bmp = transform.crop(bmp, cur.cropRect)
+                                    advance(transform.crop(bmp, cur.cropRect))
                                 }
                             }
                             CropStyle.PERSPECTIVE -> {
                                 if (cur.perspectiveCorners.size == 4) {
-                                    bmp = transform.perspectiveCrop(bmp, cur.perspectiveCorners)
+                                    advance(transform.perspectiveCrop(bmp, cur.perspectiveCorners))
                                 }
                             }
                             CropStyle.FREEFORM -> {
                                 if (cur.freeformPoints.size >= 3) {
                                     val transparent = cur.format == ExportFormat.PNG
-                                    bmp = transform.freeformCrop(bmp, cur.freeformPoints, transparent)
+                                    advance(transform.freeformCrop(bmp, cur.freeformPoints, transparent))
                                 }
                             }
                         }
                     }
+                    if (kotlin.math.abs(cur.brightness) >= 0.5f || kotlin.math.abs(cur.contrast - 1f) >= 0.01f) {
+                        advance(transform.adjustTone(bmp, cur.brightness, cur.contrast))
+                    }
                     if (cur.strokes.isNotEmpty()) {
-                        bmp = transform.bakeStrokes(bmp, cur.strokes)
+                        advance(transform.bakeColoredStrokes(bmp, cur.strokes))
                     }
                     if (cur.redactRects.isNotEmpty()) {
-                        bmp = transform.redact(bmp, cur.redactRects, cur.redactStyle)
+                        advance(transform.redact(bmp, cur.redactRects, cur.redactStyle))
                     }
                     val pid = pageId
                     if (pid != null) {
@@ -426,10 +477,13 @@ class ImageEditViewModel @Inject constructor(
                         lastResult = result,
                         pageSavedMessage = if (result == null) "已保存页面修改" else null,
                         strokes = emptyList(),
-                        redactRects = emptyList()
+                        redactRects = emptyList(),
+                        brightness = 0f,
+                        contrast = 1f
                     )
                 }
             }.onFailure { e ->
+                if (bmp !== startBmp && !bmp.isRecycled) bmp.recycle()
                 _state.update { it.copy(saving = false, error = e.message ?: "保存失败") }
             }
         }
@@ -492,9 +546,13 @@ data class ImageEditUiState(
     val quality: Int = 92,
     val mode: ImageEditMode = ImageEditMode.CROP,
     val freeAngle: Float = 0f,
+    val brightness: Float = 0f,
+    val contrast: Float = 1f,
     val watermark: String = "",
     val watermarkPos: WatermarkPosition = WatermarkPosition.BOTTOM_RIGHT,
-    val strokes: List<List<Pair<Float, Float>>> = emptyList(),
+    val penColor: Int = Color.BLACK,
+    val penWidthRatio: Float = 0.005f,
+    val strokes: List<ColoredStroke> = emptyList(),
     val redactRects: List<NormalizedCropRect> = emptyList(),
     val redactStyle: RedactStyle = RedactStyle.BLACK,
     val dirty: Boolean = false,

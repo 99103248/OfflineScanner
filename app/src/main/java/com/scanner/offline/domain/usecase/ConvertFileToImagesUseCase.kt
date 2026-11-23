@@ -20,7 +20,8 @@ class ConvertFileToImagesUseCase @Inject constructor(
         inputType: InputDocumentType,
         format: ExportFormat,
         baseName: String = "converted",
-        pdfLayout: PdfImageLayout = PdfImageLayout.SEPARATE_PAGES
+        pdfLayout: PdfImageLayout = PdfImageLayout.SEPARATE_PAGES,
+        quality: Int = 92
     ): List<ExportResult> = withContext(Dispatchers.IO) {
         require(format == ExportFormat.JPG || format == ExportFormat.PNG || format == ExportFormat.WEBP) {
             "文档转图片仅支持 JPG / PNG / WebP"
@@ -41,7 +42,7 @@ class ConvertFileToImagesUseCase @Inject constructor(
                     mimeType = format.mimeType
                 )
                 sink.openOutputStream().use { os ->
-                    converter.writeBitmap(bmp, format, os)
+                    converter.writeBitmap(bmp, format, os, quality.coerceIn(40, 100))
                 }
                 ExportResult(
                     displayName = sink.displayName,

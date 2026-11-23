@@ -88,6 +88,37 @@ class StorageManager @Inject constructor(
         return count
     }
 
+    /** 一键清理所有临时缓存文件，返回清理的文件数量。 */
+    fun clearAllCache(): Int {
+        var count = 0
+        runCatching {
+            cacheRoot.walkBottomUp().forEach { f ->
+                if (f != cacheRoot) {
+                    val wasFile = f.isFile
+                    if (f.delete() && wasFile) {
+                        count++
+                    }
+                }
+            }
+        }
+        return count
+    }
+
+    fun calculateDocumentsBytes(): Long = directorySize(documentsRoot)
+
+    fun calculateCacheBytes(): Long = directorySize(cacheRoot)
+
+    private fun directorySize(dir: File): Long {
+        if (!dir.exists()) return 0L
+        var total = 0L
+        runCatching {
+            dir.walkTopDown().forEach { f ->
+                if (f.isFile) total += f.length()
+            }
+        }
+        return total
+    }
+
     /** 默认导出目录下创建文件（旧路径，给不支持 SAF 的代码兜底） */
     fun newExportFile(name: String, extension: String): File =
         File(exportRoot, "${sanitize(name)}.$extension")

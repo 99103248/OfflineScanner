@@ -31,6 +31,7 @@ class ImageFilter {
         FilterMode.GRAYSCALE -> applyMatrix(source, grayscaleMatrix())
         FilterMode.BLACK_WHITE -> applyBlackWhite(source)
         FilterMode.REMOVE_SHADOW -> removeShadow(source)
+        FilterMode.REMOVE_HANDWRITING -> removeHandwriting(source)
     }
 
     // ---------- 颜色矩阵滤镜 ----------
@@ -219,6 +220,100 @@ class ImageFilter {
             mergedHsv, outRgb, outRgba
         ).forEach { it.release() }
         return bmp
+    }
+
+    // ---------- 去蓝红手写笔迹（试卷/批注还原） ----------
+
+    /**
+     * 去除试卷或打印件上的蓝色/红色手写笔迹，尽量保留黑色印刷文字与表格线。
+     * 优先用 OpenCV HSV 通道精确识别蓝/红高饱和度笔迹并用干净纸面底色填充；
+     * OpenCV 不可用时降级到纯像素 RGB 通道检测。
+     */
+    private fun removeHandwriting(source: Bitmap): Bitmap {
+        return runCatching { removeHandwritingOpenCv(source) }
+            .getOrElse {
+                Log.w(TAG, "OpenCV 去笔迹失败，降级到像素实现：${it.message}")
+                removeHandwritingFallback(source)
+            }
+    }
+
+    private fun removeHandwritingOpenCv(source: Bitmap): Bitmap {
+        check(OpenCvLoader.ensureLoaded()) { "OpenCV 未加载" }
+        val w = source.width
+        val h = source.height
+        val src = Mat()
+        Utils.bitmapToMat(source, src)
+
+        val rgb = Mat()
+        Imgproc.cvtColor(src, rgb, Imgproc.COLOR_RGBA2RGB)
+        val hsv = Mat()
+        Imgproc.cvtColor(rgb, hsv, Imgproc.COLOR_RGB2HSV)
+
+        // OpenCV HSV 范围：H in [0,179], S in [0,255], V in [0,255]
+        // 蓝色笔迹（蓝圆珠笔/中性笔）：H 90..138, S >= 45, V >= 40
+        val blueMask = Mat()
+        Core.inRange(hsv, org.opencv.core.Scalar(90.0, 45.0, 40.0), org.opencv.core.Scalar(138.0, 255.0, 255.0), blueMask)
+        // 红色笔迹（红笔批改）：H 0..14 或 162..179, S >= 45, V >= 40
+        val redMask1 = Mat()
+        val redMask2 = Mat()
+        Core.inRange(hsv, org.opencv.core.Scalar(0.0, 45.0, 40.0), org.opencv.core.Scalar(14.0, 255.0, 255.0), redMask1)
+        Core.inRange(hsv, org.opencv.core.Scalar(162.0, 45.0, 40.0), org.opencv.core.Scalar(179.0, 255.0, 255.0), redMask2)
+
+        val inkMask = Mat()
+        Core.bitwise_or(blueMask, redMask1, inkMask)
+        Core.bitwise_or(inkMask, redMask2, inkMask)
+
+        // 适度膨胀 1px 消除笔迹边缘残留彩晕
+        val dilateKernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
+        Imgproc.dilate(inkMask, inkMask, dilateKernel)
+
+        // 转为灰度并提亮背景，然后把蓝/红笔迹掩码区域涂白还原空白纸面
+        val gray = Mat()
+        Imgproc.cvtColor(rgb, gray, Imgproc.COLOR_RGB2GRAY)
+        val enhancedGray = Mat()
+        gray.convertTo(enhancedGray, CvType.CV_8U, 1.15, 12.0)
+        enhancedGray.setTo(org.opencv.core.Scalar(252.0), inkMask)
+
+        val outRgba = Mat()
+        Imgproc.cvtColor(enhancedGray, outRgba, Imgproc.COLOR_GRAY2RGBA)
+
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(outRgba, bmp)
+
+        listOf(
+            src, rgb, hsv, blueMask, redMask1, redMask2,
+            inkMask, dilateKernel, gray, enhancedGray, outRgba
+        ).forEach { it.release() }
+        return bmp
+    }
+
+    private fun removeHandwritingFallback(source: Bitmap): Bitmap {
+        val w = source.width
+        val h = source.height
+        val pixels = IntArray(w * h)
+        source.getPixels(pixels, 0, w, 0, 0, w, h)
+        val hsv = FloatArray(3)
+        for (i in pixels.indices) {
+            val c = pixels[i]
+            val r = android.graphics.Color.red(c)
+            val g = android.graphics.Color.green(c)
+            val b = android.graphics.Color.blue(c)
+            android.graphics.Color.RGBToHSV(r, g, b, hsv)
+            val hue = hsv[0] // 0..360
+            val sat = hsv[1] // 0..1
+            val value = hsv[2] // 0..1
+            val isBlueInk = hue in 180f..275f && sat >= 0.18f && value >= 0.16f
+            val isRedInk = (hue <= 28f || hue >= 325f) && sat >= 0.18f && value >= 0.16f
+            if (isBlueInk || isRedInk) {
+                pixels[i] = android.graphics.Color.rgb(252, 252, 252)
+            } else {
+                val lum = ((0.299f * r + 0.587f * g + 0.114f * b) * 1.12f + 10f).toInt().coerceIn(0, 255)
+                pixels[i] = android.graphics.Color.rgb(lum, lum, lum)
+            }
+        }
+        return Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
+            setPixels(pixels, 0, w, 0, 0, w, h)
+        }
     }
 
     /** OpenCV 不可用时的退化版 —— 接近 ENHANCE，但更激进一些 */

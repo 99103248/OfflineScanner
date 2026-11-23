@@ -20,6 +20,7 @@ import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.DeleteForever
 import androidx.compose.material.icons.outlined.DocumentScanner
 import androidx.compose.material.icons.outlined.RestoreFromTrash
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -33,6 +34,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -55,6 +59,8 @@ fun TrashScreen(
     viewModel: TrashViewModel = hiltViewModel()
 ) {
     val docs by viewModel.documents.collectAsStateWithLifecycle()
+    var confirmEmpty by remember { mutableStateOf(false) }
+    var deleteTarget by remember { mutableStateOf<Document?>(null) }
 
     Scaffold(
         topBar = {
@@ -65,7 +71,7 @@ fun TrashScreen(
                 },
                 actions = {
                     if (docs.isNotEmpty()) {
-                        TextButton(onClick = { viewModel.emptyTrash { } }) {
+                        TextButton(onClick = { confirmEmpty = true }) {
                             Text(stringResource(R.string.action_empty_trash))
                         }
                     }
@@ -100,11 +106,45 @@ fun TrashScreen(
                     TrashItem(
                         doc = doc,
                         onRestore = { viewModel.restore(doc.id) },
-                        onDeleteForever = { viewModel.deleteForever(doc.id) }
+                        onDeleteForever = { deleteTarget = doc }
                     )
                 }
             }
         }
+    }
+
+    if (confirmEmpty) {
+        AlertDialog(
+            onDismissRequest = { confirmEmpty = false },
+            title = { Text("清空回收站？") },
+            text = { Text("回收站中的 ${docs.size} 个文档将被永久删除，无法恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.emptyTrash { }
+                    confirmEmpty = false
+                }) { Text("彻底清空") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmEmpty = false }) { Text("取消") }
+            }
+        )
+    }
+
+    deleteTarget?.let { target ->
+        AlertDialog(
+            onDismissRequest = { deleteTarget = null },
+            title = { Text("彻底删除文档？") },
+            text = { Text("「${target.name}」及其全部页面将被永久删除，无法恢复。") },
+            confirmButton = {
+                TextButton(onClick = {
+                    viewModel.deleteForever(target.id)
+                    deleteTarget = null
+                }) { Text("彻底删除") }
+            },
+            dismissButton = {
+                TextButton(onClick = { deleteTarget = null }) { Text("取消") }
+            }
+        )
     }
 }
 

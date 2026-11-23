@@ -9,6 +9,7 @@ import android.graphics.Matrix
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -29,6 +30,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
+import androidx.compose.material.icons.outlined.FlashlightOff
+import androidx.compose.material.icons.outlined.FlashlightOn
 import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material.icons.outlined.PhotoLibrary
 import androidx.compose.material3.AssistChip
@@ -67,6 +70,7 @@ import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.scanner.offline.data.storage.StorageManager
+import com.scanner.offline.engine.ocr.BarcodeContentParser
 import com.scanner.offline.engine.ocr.BarcodeHit
 import com.scanner.offline.engine.ocr.BarcodeScannerEngine
 import com.scanner.offline.util.BitmapUtils
@@ -139,6 +143,8 @@ fun BarcodeScreen(onBack: () -> Unit, viewModel: BarcodeViewModel = hiltViewMode
 
     var hits by remember { mutableStateOf<List<BarcodeHit>>(emptyList()) }
     var liveScan by remember { mutableStateOf(false) }
+    var torchOn by remember { mutableStateOf(false) }
+    var boundCamera by remember { mutableStateOf<Camera?>(null) }
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
 
     DisposableEffect(Unit) {
@@ -166,6 +172,19 @@ fun BarcodeScreen(onBack: () -> Unit, viewModel: BarcodeViewModel = hiltViewMode
                 title = { Text("扫码 / 条码") },
                 navigationIcon = {
                     IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, null) }
+                },
+                actions = {
+                    if (liveScan) {
+                        IconButton(onClick = {
+                            torchOn = !torchOn
+                            runCatching { boundCamera?.cameraControl?.enableTorch(torchOn) }
+                        }) {
+                            Icon(
+                                if (torchOn) Icons.Outlined.FlashlightOn else Icons.Outlined.FlashlightOff,
+                                contentDescription = "手电筒"
+                            )
+                        }
+                    }
                 }
             )
         },
@@ -249,6 +268,8 @@ fun BarcodeScreen(onBack: () -> Unit, viewModel: BarcodeViewModel = hiltViewMode
                                                     viewModel.scanBitmap(bmp) { found ->
                                                         hits = found
                                                         liveScan = false
+                                                        torchOn = false
+                                                        boundCamera = null
                                                         runCatching { provider.unbindAll() }
                                                     }
                                                 } catch (_: Throwable) {
@@ -259,12 +280,14 @@ fun BarcodeScreen(onBack: () -> Unit, viewModel: BarcodeViewModel = hiltViewMode
                                         }
                                     runCatching {
                                         provider.unbindAll()
-                                        provider.bindToLifecycle(
+                                        val cam = provider.bindToLifecycle(
                                             lifecycleOwner,
                                             CameraSelector.DEFAULT_BACK_CAMERA,
                                             preview,
                                             analysis
                                         )
+                                        boundCamera = cam
+                                        cam.cameraControl.enableTorch(torchOn)
                                     }
                                 }, ContextCompat.getMainExecutor(ctx))
                                 previewView
@@ -281,6 +304,7 @@ fun BarcodeScreen(onBack: () -> Unit, viewModel: BarcodeViewModel = hiltViewMode
             }
 
             hits.forEach { h ->
+                val parsed = remember(h.rawValue) { BarcodeContentParser.parse(h.rawValue) }
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
@@ -289,17 +313,39 @@ fun BarcodeScreen(onBack: () -> Unit, viewModel: BarcodeViewModel = hiltViewMode
                         modifier = Modifier.padding(12.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Text(h.format, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-                        Text(h.rawValue, style = MaterialTheme.typography.bodyLarge)
-                        AssistChip(
-                            onClick = {
-                                val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                                cm.setPrimaryClip(ClipData.newPlainText("barcode", h.rawValue))
-                                scope.launch { snack.showSnackbar("已复制") }
-                            },
-                            label = { Text("复制内容") },
-                            leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }
+                        Text(
+                            text = "${h.format} · ${parsed.type.displayName}",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.primary
                         )
+                        if (parsed.fields.isNotEmpty()) {
+                            parsed.fields.forEach { (k, v) ->
+                                Text("$k：$v", style = MaterialTheme.typography.bodyMedium)
+                            }
+                        } else {
+                            Text(h.rawValue, style = MaterialTheme.typography.bodyLarge)
+                        }
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            AssistChip(
+                                onClick = {
+                                    val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    cm.setPrimaryClip(ClipData.newPlainText("barcode", parsed.primaryCopyValue))
+                                    scope.launch { snack.showSnackbar("已${parsed.primaryCopyLabel}") }
+                                },
+                                label = { Text(parsed.primaryCopyLabel) },
+                                leadingIcon = { Icon(Icons.Outlined.ContentCopy, null) }
+                            )
+                            if (parsed.primaryCopyValue != h.rawValue) {
+                                AssistChip(
+                                    onClick = {
+                                        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        cm.setPrimaryClip(ClipData.newPlainText("barcode_raw", h.rawValue))
+                                        scope.launch { snack.showSnackbar("已复制原始内容") }
+                                    },
+                                    label = { Text("复制原文") }
+                                )
+                            }
+                        }
                     }
                 }
             }

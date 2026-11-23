@@ -176,11 +176,30 @@ fun FormatConvertScreen(
             }
 
             if (sourceUri != null) {
-                sourceLabel?.let {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
                     Text(
-                        "已选择：$it",
-                        style = MaterialTheme.typography.bodySmall
+                        text = "已选择：${sourceLabel.orEmpty()}",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.weight(1f),
+                        maxLines = 1
                     )
+                    androidx.compose.material3.TextButton(
+                        enabled = !state.running,
+                        onClick = {
+                            pickDocument.launch(
+                                arrayOf(
+                                    "application/pdf",
+                                    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    "text/plain",
+                                    "image/*"
+                                )
+                            )
+                        }
+                    ) { Text("更换文件") }
                 }
                 if (isPdfSource) {
                     Text(stringResource(R.string.tool_format_pdf_layout), style = MaterialTheme.typography.titleMedium)

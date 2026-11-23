@@ -10,14 +10,22 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.ArrowDownward
+import androidx.compose.material.icons.outlined.ArrowUpward
+import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -30,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -37,6 +46,7 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.scanner.offline.data.storage.StorageManager
+import com.scanner.offline.engine.export.PdfPageRangeParser
 import com.scanner.offline.engine.export.PdfToolkit
 import com.scanner.offline.util.Time
 import com.scanner.offline.util.UriUtils
@@ -85,8 +95,9 @@ class PdfToolViewModel @Inject constructor(
                                 "已拆成 $count 个 PDF"
                             }
                             PdfToolAction.EXTRACT -> {
-                                val idx = parseRange(range, toolkit.pageCount(files.first()))
-                                require(idx.isNotEmpty()) { "请输入有效页码范围" }
+                                val total = toolkit.pageCount(files.first())
+                                val idx = PdfPageRangeParser.parse(range, total)
+                                require(idx.isNotEmpty()) { "请输入有效页码范围（共 $total 页，例如 1-3,5）" }
                                 val sink = storage.createExportSink(Time.nowDocName("extract"), "pdf", "application/pdf")
                                 sink.openOutputStream().use { toolkit.extract(files.first(), idx, it) }
                                 sink.displayName
@@ -100,23 +111,9 @@ class PdfToolViewModel @Inject constructor(
         }
     }
 
-    private fun parseRange(raw: String, pageCount: Int): List<Int> {
-        val parts = raw.split(",", "，", " ").map { it.trim() }.filter { it.isNotEmpty() }
-        val out = mutableListOf<Int>()
-        parts.forEach { p ->
-            if ("-" in p) {
-                val bounds = p.split("-").mapNotNull { it.trim().toIntOrNull() }
-                if (bounds.size == 2) {
-                    val a = minOf(bounds[0], bounds[1])
-                    val b = maxOf(bounds[0], bounds[1])
-                    for (i in a..b) out += (i - 1)
-                }
-            } else {
-                p.toIntOrNull()?.let { out += (it - 1) }
-            }
-        }
-        return out.filter { it in 0 until pageCount }.distinct()
-    }
+    fun inspectPageCount(path: String): Int = runCatching {
+        toolkit.pageCount(File(path))
+    }.getOrDefault(0)
 
     private fun copyToCache(uriString: String): File? {
         File(uriString).takeIf { it.exists() }?.let { return it }
@@ -129,18 +126,31 @@ class PdfToolViewModel @Inject constructor(
     }
 }
 
+data class SelectedPdfItem(
+    val path: String,
+    val displayName: String,
+    val pageCount: Int
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val snack = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
-    var uris by remember { mutableStateOf<List<String>>(emptyList()) }
+    var items by remember { mutableStateOf<List<SelectedPdfItem>>(emptyList()) }
     var action by remember { mutableStateOf(PdfToolAction.MERGE) }
     var range by remember { mutableStateOf("1-1") }
     var running by remember { mutableStateOf(false) }
     val pick = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { list ->
-        uris = list.mapNotNull { UriUtils.copyUriToCache(context, it, "pdf") }
+        val added = list.mapNotNull { uri ->
+            val path = UriUtils.copyUriToCache(context, uri, "pdf") ?: return@mapNotNull null
+            val name = uri.lastPathSegment?.substringAfterLast('/') ?: File(path).name
+            SelectedPdfItem(path = path, displayName = name, pageCount = viewModel.inspectPageCount(path))
+        }
+        if (added.isNotEmpty()) {
+            items = items + added
+        }
     }
     Scaffold(topBar = {
         TopAppBar(title = { Text("PDF 工具") }, navigationIcon = {
@@ -148,7 +158,11 @@ fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewMode
         })
     }, snackbarHost = { SnackbarHost(snack) }) { padding ->
         Column(
-            Modifier.fillMaxSize().padding(padding).padding(16.dp),
+            Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             if (running) {
@@ -157,8 +171,58 @@ fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewMode
             Button(
                 onClick = { pick.launch(arrayOf("application/pdf")) },
                 enabled = !running
-            ) { Text("选择 PDF") }
-            Text("已选 ${uris.size} 个文件")
+            ) { Text(if (items.isEmpty()) "选择 PDF" else "继续添加 PDF") }
+            Text("已选 ${items.size} 个文件（共 ${items.sumOf { it.pageCount }} 页）")
+
+            items.forEachIndexed { idx, item ->
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(item.displayName, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                            Text(
+                                "${item.pageCount} 页",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                        if (items.size > 1) {
+                            IconButton(
+                                enabled = !running && idx > 0,
+                                onClick = {
+                                    items = items.toMutableList().apply {
+                                        val moved = removeAt(idx)
+                                        add(idx - 1, moved)
+                                    }
+                                }
+                            ) { Icon(Icons.Outlined.ArrowUpward, contentDescription = "上移") }
+                            IconButton(
+                                enabled = !running && idx < items.lastIndex,
+                                onClick = {
+                                    items = items.toMutableList().apply {
+                                        val moved = removeAt(idx)
+                                        add(idx + 1, moved)
+                                    }
+                                }
+                            ) { Icon(Icons.Outlined.ArrowDownward, contentDescription = "下移") }
+                        }
+                        IconButton(
+                            enabled = !running,
+                            onClick = {
+                                items = items.toMutableList().also { it.removeAt(idx) }
+                            }
+                        ) { Icon(Icons.Outlined.Close, contentDescription = "移除") }
+                    }
+                }
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     selected = action == PdfToolAction.MERGE,
@@ -183,7 +247,7 @@ fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewMode
                 OutlinedTextField(
                     value = range,
                     onValueChange = { range = it },
-                    label = { Text("页码，如 1-3,5") },
+                    label = { Text("页码范围，如 1-3, 5, 7-") },
                     modifier = Modifier.fillMaxWidth(),
                     enabled = !running
                 )
@@ -192,12 +256,12 @@ fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewMode
                 onClick = {
                     running = true
                     viewModel.run(
-                        uris,
+                        items.map { it.path },
                         action,
                         range,
                         onDone = {
                             running = false
-                            uris = emptyList()
+                            items = emptyList()
                             scope.launch { snack.showSnackbar(it) }
                         },
                         onError = {
@@ -206,7 +270,7 @@ fun PdfToolScreen(onBack: () -> Unit, viewModel: PdfToolViewModel = hiltViewMode
                         }
                     )
                 },
-                enabled = uris.isNotEmpty() && !running,
+                enabled = items.isNotEmpty() && !running,
                 modifier = Modifier.fillMaxWidth()
             ) { Text(if (running) "处理中..." else "开始") }
         }

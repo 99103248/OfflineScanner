@@ -248,24 +248,32 @@ class DocumentExporter {
     fun textsToPdf(texts: List<String>, output: OutputStream) {
         val pdf = PdfDocument()
         try {
-            texts.forEachIndexed { index, text ->
-                val info = PdfDocument.PageInfo.Builder(595, 842, index + 1).create()  // A4 @ 72dpi
-                val page = pdf.startPage(info)
-                val paint = Paint().apply {
-                    color = Color.BLACK
-                    textSize = 12f
-                    isAntiAlias = true
-                }
-                val padding = 36f
-                val maxWidth = 595f - padding * 2
+            val paint = Paint().apply {
+                color = Color.BLACK
+                textSize = 12f
+                isAntiAlias = true
+            }
+            val padding = 36f
+            val maxWidth = 595f - padding * 2
+            val lineHeight = 18f
+            val bottomLimit = 842f - padding
+            var pageNumber = 1
+
+            texts.forEach { text ->
+                var page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber++).create())
                 var y = padding + 16f
                 text.split('\n').forEach { line ->
-                    val wrapped = wrapText(line, paint, maxWidth)
+                    val wrapped = if (line.isEmpty()) listOf("") else wrapText(line, paint, maxWidth)
                     wrapped.forEach { piece ->
-                        if (y <= 842 - padding) {
-                            page.canvas.drawText(piece, padding, y, paint)
-                            y += 18f
+                        if (y > bottomLimit) {
+                            pdf.finishPage(page)
+                            page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, pageNumber++).create())
+                            y = padding + 16f
                         }
+                        if (piece.isNotEmpty()) {
+                            page.canvas.drawText(piece, padding, y, paint)
+                        }
+                        y += lineHeight
                     }
                 }
                 pdf.finishPage(page)

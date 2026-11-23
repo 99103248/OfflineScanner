@@ -47,6 +47,7 @@ import androidx.compose.material.icons.outlined.PhotoCamera
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -87,6 +88,8 @@ import com.google.accompanist.permissions.isGranted
 import com.google.accompanist.permissions.rememberPermissionState
 import com.scanner.offline.R
 import com.scanner.offline.engine.image.EdgeDetector
+import com.scanner.offline.engine.image.NormPoint
+import com.scanner.offline.engine.image.QuadStabilityTracker
 import com.scanner.offline.util.UriUtils
 import kotlinx.coroutines.launch
 import java.io.File
@@ -142,7 +145,60 @@ fun CameraScreen(
     var lensFacing by remember { mutableIntStateOf(CameraSelector.LENS_FACING_BACK) }
     var lightMode by remember { mutableIntStateOf(LIGHT_MODE_OFF) }
     var showGrid by remember { mutableStateOf(true) }
+    var autoCapture by remember { mutableStateOf(false) }
+    var autoCaptureProgress by remember { mutableStateOf(0f) }
+    var capturing by remember { mutableStateOf(false) }
     var liveCorners by remember { mutableStateOf<List<PointF>?>(null) }
+    val stabilityTracker = remember { QuadStabilityTracker(requiredStableFrames = 5) }
+
+    val triggerCapture: () -> Unit = trigger@{
+        val capture = imageCapture ?: return@trigger
+        if (!cameraPermission.status.isGranted || capturing) return@trigger
+        capturing = true
+        val outFile = File(
+            context.cacheDir,
+            "tmp/cap_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.jpg"
+        ).also { it.parentFile?.mkdirs() }
+        val opts = ImageCapture.OutputFileOptions.Builder(outFile).build()
+        capture.takePicture(
+            opts,
+            executor,
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(out: ImageCapture.OutputFileResults) {
+                    capturing = false
+                    autoCaptureProgress = 0f
+                    val uri = Uri.fromFile(outFile).toString()
+                    if (burstMode) burstUris = burstUris + uri
+                    else onCaptured(uri)
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    capturing = false
+                    autoCaptureProgress = 0f
+                    scope.launch {
+                        snackbarHostState.showSnackbar("拍摄失败：${exception.message ?: ""}")
+                    }
+                }
+            }
+        )
+    }
+
+    LaunchedEffect(autoCapture) {
+        if (!autoCapture) {
+            stabilityTracker.reset()
+            autoCaptureProgress = 0f
+        }
+    }
+
+    LaunchedEffect(liveCorners, autoCapture) {
+        if (!autoCapture) return@LaunchedEffect
+        val normQuad = liveCorners?.takeIf { it.size == 4 }?.map { NormPoint(it.x, it.y) }
+        val update = stabilityTracker.update(normQuad, System.currentTimeMillis())
+        autoCaptureProgress = update.progress
+        if (update.shouldCapture) {
+            triggerCapture()
+        }
+    }
 
     LaunchedEffect(imageCapture, camera, lightMode) {
         when (lightMode) {
@@ -194,6 +250,12 @@ fun CameraScreen(
                             Icons.Outlined.GridOn,
                             contentDescription = "网格",
                             tint = if (showGrid) Color.White else Color.White.copy(alpha = 0.5f)
+                        )
+                    }
+                    TextButton(onClick = { autoCapture = !autoCapture }) {
+                        Text(
+                            if (autoCapture) "自动拍:开" else "自动拍",
+                            color = if (autoCapture) Color(0xFF64B5F6) else Color.White
                         )
                     }
                     TextButton(onClick = { burstMode = !burstMode }) {
@@ -267,6 +329,30 @@ fun CameraScreen(
                 }
                 if (showGrid) {
                     CameraGrid(modifier = Modifier.fillMaxSize())
+                }
+                if (autoCapture) {
+                    Column(
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 12.dp)
+                            .background(Color.Black.copy(alpha = 0.65f), RoundedCornerShape(16.dp))
+                            .padding(horizontal = 14.dp, vertical = 6.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = if (autoCaptureProgress > 0f) "检测到文档，保持稳定自动拍摄..." else "对准文档，稳定后自动拍摄",
+                            color = Color.White,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        if (autoCaptureProgress > 0f) {
+                            LinearProgressIndicator(
+                                progress = { autoCaptureProgress },
+                                modifier = Modifier
+                                    .padding(top = 4.dp)
+                                    .size(width = 140.dp, height = 4.dp)
+                            )
+                        }
+                    }
                 }
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -345,31 +431,10 @@ fun CameraScreen(
                         )
                     }
 
-                    ShutterButton(enabled = imageCapture != null && cameraPermission.status.isGranted) {
-                        val capture = imageCapture ?: return@ShutterButton
-                        val outFile = File(
-                            context.cacheDir,
-                            "tmp/cap_${SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())}.jpg"
-                        ).also { it.parentFile?.mkdirs() }
-                        val opts = ImageCapture.OutputFileOptions.Builder(outFile).build()
-                        capture.takePicture(
-                            opts,
-                            executor,
-                            object : ImageCapture.OnImageSavedCallback {
-                                override fun onImageSaved(out: ImageCapture.OutputFileResults) {
-                                    val uri = Uri.fromFile(outFile).toString()
-                                    if (burstMode) burstUris = burstUris + uri
-                                    else onCaptured(uri)
-                                }
-
-                                override fun onError(exception: ImageCaptureException) {
-                                    scope.launch {
-                                        snackbarHostState.showSnackbar("拍摄失败：${exception.message ?: ""}")
-                                    }
-                                }
-                            }
-                        )
-                    }
+                    ShutterButton(
+                        enabled = imageCapture != null && cameraPermission.status.isGranted && !capturing,
+                        onClick = triggerCapture
+                    )
 
                     IconButton(onClick = {
                         lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {

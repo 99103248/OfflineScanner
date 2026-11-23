@@ -294,4 +294,27 @@ class OoxmlWriterTest {
         assertTrue("应有 C1", sheetXml.contains("r=\"C1\""))
         // B1 的空字符串不会写入
     }
+
+    @Test
+    fun `writeDocx 与 writeXlsx 自动过滤 XML 非法控制字符保证可解析`() {
+        val dirtyText = "正常\u0000字\u0007符\u000B测试\u001F\t保留制表"
+        val docx = tempFolder.newFile("clean.docx")
+        OoxmlWriter.writeDocx(listOf(dirtyText, "第二页"), docx)
+
+        val docxXml = ZipFile(docx).use { zip ->
+            zip.getInputStream(zip.getEntry("word/document.xml")!!).bufferedReader().readText()
+        }
+        val dom = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+        dom.parse(docxXml.byteInputStream())
+        assertTrue("多页 docx 应包含分页符", docxXml.contains("w:type=\"page\""))
+        assertTrue("合法文本应保留", docxXml.contains("正常字符测试"))
+
+        val xlsx = tempFolder.newFile("clean.xlsx")
+        OoxmlWriter.writeXlsx(listOf(TableData(listOf(listOf(dirtyText)))), xlsx)
+        val sharedXml = ZipFile(xlsx).use { zip ->
+            zip.getInputStream(zip.getEntry("xl/sharedStrings.xml")!!).bufferedReader().readText()
+        }
+        dom.parse(sharedXml.byteInputStream())
+        assertTrue("Excel sharedStrings 应保留正常文本", sharedXml.contains("正常字符测试"))
+    }
 }

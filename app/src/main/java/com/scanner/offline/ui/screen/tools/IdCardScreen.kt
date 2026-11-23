@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -22,16 +23,19 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.AddPhotoAlternate
 import androidx.compose.material.icons.outlined.SwapHoriz
+import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -51,6 +55,7 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
+import com.scanner.offline.domain.model.FilterMode
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -115,6 +120,59 @@ fun IdCardScreen(
                     modifier = Modifier.weight(1f),
                     onClick = { pickBack.launch("image/*") }
                 )
+            }
+
+            Spacer(Modifier.height(12.dp))
+            Text("复印效果", style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(FilterMode.ORIGINAL, FilterMode.ENHANCE, FilterMode.BLACK_WHITE, FilterMode.REMOVE_SHADOW).forEach { mode ->
+                    FilterChip(
+                        selected = state.filterMode == mode,
+                        onClick = { viewModel.setFilterMode(mode) },
+                        label = { Text(mode.displayName) },
+                        enabled = !state.busy
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(10.dp))
+            OutlinedTextField(
+                value = state.watermarkText,
+                onValueChange = viewModel::setWatermarkText,
+                label = { Text("防盗水印（可选，斜向全屏平铺）") },
+                placeholder = { Text("例如：仅供办理业务使用，他用无效") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                listOf(
+                    "仅供办理业务使用，他用无效",
+                    "仅供实名认证复印使用",
+                    "严禁他用"
+                ).forEach { preset ->
+                    AssistChip(
+                        onClick = { viewModel.setWatermarkText(preset) },
+                        label = { Text(preset) }
+                    )
+                }
+                if (state.watermarkText.isNotEmpty()) {
+                    AssistChip(
+                        onClick = { viewModel.setWatermarkText("") },
+                        label = { Text("清除水印") }
+                    )
+                }
             }
 
             Spacer(Modifier.height(12.dp))

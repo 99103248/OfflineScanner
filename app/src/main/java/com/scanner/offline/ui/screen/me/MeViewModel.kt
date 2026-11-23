@@ -31,10 +31,38 @@ class MeViewModel @Inject constructor(
     private val _state = MutableStateFlow(buildState())
     val state: StateFlow<MeUiState> = _state.asStateFlow()
 
+    init {
+        refreshStorageStats()
+    }
+
+    fun refreshStorageStats() {
+        viewModelScope.launch {
+            val (docBytes, cacheBytes) = withContext(Dispatchers.IO) {
+                storage.calculateDocumentsBytes() to storage.calculateCacheBytes()
+            }
+            _state.value = _state.value.copy(
+                documentsSizeText = formatBytes(docBytes),
+                cacheSizeText = formatBytes(cacheBytes)
+            )
+        }
+    }
+
+    fun clearCache() {
+        viewModelScope.launch {
+            val count = withContext(Dispatchers.IO) { storage.clearAllCache() }
+            refreshStorageStats()
+            _state.value = _state.value.copy(
+                lastActionMessage = if (count > 0) "已清理 $count 个临时缓存文件" else "临时缓存已很干净"
+            )
+        }
+    }
+
     /** 用户在 SAF 选择器里选完目录之后回调这里 */
     fun onDirectoryChosen(uri: Uri) {
         val ok = exportPrefs.setCustomExportDirUri(uri)
-        _state.value = buildState().copy(
+        _state.value = _state.value.copy(
+            exportDirSummary = exportPrefs.describeCurrentDir(),
+            isCustomDirSet = exportPrefs.getCustomExportDirUri() != null,
             lastActionMessage = if (ok) "导出目录已更新" else "保存导出目录失败，请重试"
         )
     }
@@ -42,7 +70,11 @@ class MeViewModel @Inject constructor(
     /** 用户点了"恢复默认"按钮 */
     fun onResetToDefault() {
         exportPrefs.clearCustomExportDir()
-        _state.value = buildState().copy(lastActionMessage = "已恢复为默认导出目录")
+        _state.value = _state.value.copy(
+            exportDirSummary = exportPrefs.describeCurrentDir(),
+            isCustomDirSet = false,
+            lastActionMessage = "已恢复为默认导出目录"
+        )
     }
 
     fun backup(uri: Uri) {
@@ -113,12 +145,23 @@ class MeViewModel @Inject constructor(
             isCustomDirSet = customSet
         )
     }
+
+    private fun formatBytes(bytes: Long): String {
+        if (bytes < 1024L) return "$bytes B"
+        val kb = bytes / 1024.0
+        if (kb < 1024.0) return String.format(java.util.Locale.US, "%.1f KB", kb)
+        val mb = kb / 1024.0
+        if (mb < 1024.0) return String.format(java.util.Locale.US, "%.1f MB", mb)
+        return String.format(java.util.Locale.US, "%.2f GB", mb / 1024.0)
+    }
 }
 
 data class MeUiState(
     val exportDirSummary: String = "",
     val defaultExportPath: String = "",
     val isCustomDirSet: Boolean = false,
+    val documentsSizeText: String = "计算中...",
+    val cacheSizeText: String = "计算中...",
     val busy: Boolean = false,
     val progress: Float = 0f,
     val progressText: String? = null,

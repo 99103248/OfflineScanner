@@ -2,10 +2,13 @@ package com.scanner.offline.ui.screen.document
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.scanner.offline.data.settings.SettingsRepository
 import com.scanner.offline.domain.model.Document
+import com.scanner.offline.domain.model.FilterMode
 import com.scanner.offline.domain.model.Language
 import com.scanner.offline.domain.repository.DocumentRepository
 import com.scanner.offline.domain.usecase.AppendImagesUseCase
+import com.scanner.offline.domain.usecase.ApplyPageFilterUseCase
 import com.scanner.offline.domain.usecase.RecognizeTextUseCase
 import com.scanner.offline.domain.usecase.RotatePageUseCase
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -22,7 +25,9 @@ class DocumentDetailViewModel @Inject constructor(
     private val repo: DocumentRepository,
     private val appendImages: AppendImagesUseCase,
     private val rotatePage: RotatePageUseCase,
-    private val recognize: RecognizeTextUseCase
+    private val applyPageFilter: ApplyPageFilterUseCase,
+    private val recognize: RecognizeTextUseCase,
+    private val settings: SettingsRepository
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(DocumentDetailUiState())
@@ -90,6 +95,21 @@ class DocumentDetailViewModel @Inject constructor(
         }
     }
 
+    /** 对已有页面基于原图无损切换滤镜 */
+    fun applyFilter(docId: Long, pageId: Long, mode: FilterMode) {
+        viewModelScope.launch {
+            _state.update { it.copy(busy = true, progress = 0.5f, progressText = "正在应用「${mode.displayName}」滤镜...") }
+            runCatching { applyPageFilter(pageId, mode) }
+                .onSuccess {
+                    _state.update { it.copy(busy = false, progressText = null, message = "已应用「${mode.displayName}」滤镜") }
+                }
+                .onFailure { e ->
+                    _state.update { it.copy(busy = false, progressText = null, error = e.message ?: "滤镜处理失败") }
+                }
+            reload(docId)
+        }
+    }
+
     /** 从相册批量追加页面 */
     fun appendImages(docId: Long, uris: List<String>) {
         if (uris.isEmpty()) return
@@ -99,6 +119,7 @@ class DocumentDetailViewModel @Inject constructor(
                 appendImages(
                     docId = docId,
                     imageUris = uris,
+                    filterMode = settings.settings.value.defaultFilter,
                     onProgress = { done, total ->
                         _state.update {
                             it.copy(

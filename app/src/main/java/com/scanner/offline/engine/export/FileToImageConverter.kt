@@ -80,15 +80,8 @@ class FileToImageConverter {
 
     private fun readTxt(file: File): String {
         val bytes = file.readBytes()
-        val text = bytes.toString(detectCharset(bytes))
+        val text = TextCharsetDetector.decode(bytes)
         return text.replace('\u000C', '\n')
-    }
-
-    private fun detectCharset(bytes: ByteArray): java.nio.charset.Charset {
-        if (bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()) {
-            return Charsets.UTF_8
-        }
-        return Charsets.UTF_8
     }
 
     private fun downscaleIfNeeded(bmp: Bitmap): Bitmap {

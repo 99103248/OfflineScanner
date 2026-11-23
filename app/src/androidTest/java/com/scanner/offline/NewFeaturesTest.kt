@@ -272,4 +272,170 @@ class NewFeaturesTest {
         assertTrue("新页文件路径不应与原第1页冲突", fNew.absolutePath != f1.absolutePath)
         assertEquals("page1_must_survive", f1.readText())
     }
+
+    @Test
+    fun textsToPdf_auto_paginates_long_text_without_truncation() {
+        val longText = (1..120).joinToString("\n") { "第 $it 行：这是一段用于验证自动分页的长文本内容" }
+        val pdf = File(context.cacheDir, "long_text_paginated.pdf")
+        DocumentExporter().textsToPdf(listOf(longText), pdf)
+
+        PdfRenderer(ParcelFileDescriptor.open(pdf, ParcelFileDescriptor.MODE_READ_ONLY)).use { renderer ->
+            assertTrue("120 行长文本应自动分页（至少 2 页），实际 ${renderer.pageCount}", renderer.pageCount >= 2)
+        }
+    }
+
+    @Test
+    fun id_card_composer_auto_rotates_portrait_and_adds_tiled_watermark() {
+        // 模拟竖拍的身份证照片（宽 < 高）
+        val front = Bitmap.createBitmap(630, 1000, Bitmap.Config.ARGB_8888)
+        Canvas(front).drawColor(Color.rgb(220, 230, 245))
+        val back = Bitmap.createBitmap(630, 1000, Bitmap.Config.ARGB_8888)
+        Canvas(back).drawColor(Color.rgb(245, 225, 225))
+
+        val composed = IdCardComposer(EdgeDetector(), PerspectiveCorrector()).compose(
+            front = front,
+            back = back,
+            filterMode = com.scanner.offline.domain.model.FilterMode.ENHANCE,
+            watermarkText = "仅供办理业务使用"
+        )
+        assertEquals(1240, composed.width)
+        assertEquals(1754, composed.height)
+        // 检查顶部空白带区域存在平铺水印绘制（不再全为纯白）
+        var nonWhiteTopPixels = 0
+        for (y in 20 until 160 step 4) {
+            for (x in 40 until 1200 step 4) {
+                if (composed.getPixel(x, y) != Color.WHITE) nonWhiteTopPixels++
+            }
+        }
+        assertTrue("平铺防盗水印应在页眉留白区有可见像素", nonWhiteTopPixels > 0)
+        composed.recycle()
+        front.recycle()
+        back.recycle()
+    }
+
+    @Test
+    fun image_filter_remove_handwriting_erases_blue_and_red_keeps_black() {
+        val src = Bitmap.createBitmap(300, 300, Bitmap.Config.ARGB_8888)
+        val c = Canvas(src)
+        c.drawColor(Color.WHITE)
+        val p = android.graphics.Paint().apply { strokeWidth = 14f }
+        // 黑色印刷文字条
+        p.color = Color.rgb(20, 20, 20)
+        c.drawRect(30f, 40f, 270f, 80f, p)
+        // 蓝色手写笔迹
+        p.color = Color.rgb(20, 70, 230)
+        c.drawRect(30f, 130f, 270f, 170f, p)
+        // 红色批改笔迹
+        p.color = Color.rgb(230, 30, 30)
+        c.drawRect(30f, 220f, 270f, 260f, p)
+
+        val out = com.scanner.offline.engine.image.ImageFilter().apply(
+            src,
+            com.scanner.offline.domain.model.FilterMode.REMOVE_HANDWRITING
+        )
+        val blackPix = out.getPixel(150, 60)
+        val bluePix = out.getPixel(150, 150)
+        val redPix = out.getPixel(150, 240)
+        assertTrue("黑色印刷区应保留深色，实际 R=${Color.red(blackPix)}", Color.red(blackPix) < 100)
+        assertTrue("蓝色手写区应被清除变白，实际 R=${Color.red(bluePix)}", Color.red(bluePix) > 220)
+        assertTrue("红色批改区应被清除变白，实际 R=${Color.red(redPix)}", Color.red(redPix) > 220)
+        out.recycle()
+        src.recycle()
+    }
+
+    @Test
+    fun image_transform_tone_adjust_tiled_watermark_and_colored_strokes() {
+        val transform = ImageTransform()
+        val src = Bitmap.createBitmap(240, 240, Bitmap.Config.ARGB_8888)
+        Canvas(src).drawColor(Color.rgb(120, 120, 120))
+
+        val brighter = transform.adjustTone(src, brightness = 45f, contrast = 1.2f)
+        assertTrue("提亮后像素亮度应升高", Color.red(brighter.getPixel(120, 120)) > 150)
+        brighter.recycle()
+
+        val signed = transform.bakeColoredStrokes(
+            src,
+            listOf(
+                com.scanner.offline.engine.image.ColoredStroke(
+                    points = listOf(0.1f to 0.5f, 0.9f to 0.5f),
+                    color = Color.rgb(21, 101, 192),
+                    widthRatio = 0.04f
+                )
+            )
+        )
+        val mid = signed.getPixel(120, 120)
+        assertTrue("蓝签笔画应正确写入画布", Color.blue(mid) > Color.red(mid) + 80)
+        signed.recycle()
+
+        val whiteBg = Bitmap.createBitmap(400, 400, Bitmap.Config.ARGB_8888)
+        Canvas(whiteBg).drawColor(Color.WHITE)
+        val tiled = transform.applyWatermark(
+            whiteBg,
+            "内部资料",
+            com.scanner.offline.domain.model.WatermarkPosition.TILED,
+            alpha = 100,
+            colorRgb = Color.DKGRAY
+        )
+        var marked = 0
+        for (y in 0 until 400 step 5) {
+            for (x in 0 until 400 step 5) {
+                if (tiled.getPixel(x, y) != Color.WHITE) marked++
+            }
+        }
+        assertTrue("全屏平铺水印应覆盖图像多处区域", marked > 10)
+        tiled.recycle()
+        whiteBg.recycle()
+        src.recycle()
+    }
+
+    @Test
+    fun apply_page_filter_reapplies_nondestructively_from_original() = runBlocking {
+        val repo = DocumentRepositoryImpl(db.documentDao())
+        val storage = StorageManager(context, ExportPreferences(context))
+        val docId = repo.create("FilterDoc")
+
+        val origBmp = Bitmap.createBitmap(200, 200, Bitmap.Config.ARGB_8888)
+        Canvas(origBmp).drawColor(Color.rgb(200, 50, 50))
+        val origFile = storage.saveBitmap(origBmp, storage.newOriginalFile(docId, 0))
+        val procFile = storage.saveBitmap(origBmp, storage.newProcessedFile(docId, 0))
+        val thumbFile = storage.saveBitmap(origBmp, storage.newThumbnailFile(docId, 0))
+        origBmp.recycle()
+
+        val pageId = repo.addPage(
+            Page(
+                docId = docId,
+                index = 0,
+                originalPath = origFile.absolutePath,
+                processedPath = procFile.absolutePath,
+                thumbnailPath = thumbFile.absolutePath
+            )
+        )
+
+        val useCase = com.scanner.offline.domain.usecase.ApplyPageFilterUseCase(
+            repo = repo,
+            imageFilter = com.scanner.offline.engine.image.ImageFilter(),
+            updatePageImage = com.scanner.offline.domain.usecase.UpdatePageImageUseCase(repo, storage)
+        )
+        useCase(pageId, com.scanner.offline.domain.model.FilterMode.GRAYSCALE)
+
+        val updated = repo.getPage(pageId)!!
+        assertEquals("原图路径应保持不变", origFile.absolutePath, updated.originalPath)
+        assertTrue("原图文件仍存在", origFile.exists())
+        assertTrue("处理图应切换为新路径刷新缓存", updated.processedPath != procFile.absolutePath)
+        assertTrue("新处理图文件应存在", File(updated.processedPath).exists())
+        val decoded = android.graphics.BitmapFactory.decodeFile(updated.processedPath)!!
+        val pix = decoded.getPixel(100, 100)
+        assertEquals("灰度处理后 R 与 B 应近似相等", Color.red(pix).toDouble(), Color.blue(pix).toDouble(), 5.0)
+        decoded.recycle()
+    }
+
+    @Test
+    fun storage_manager_calculates_and_clears_cache() {
+        val storage = StorageManager(context, ExportPreferences(context))
+        val f = storage.newCacheImage("test_cache").apply { writeBytes(ByteArray(2048) { 1 }) }
+        assertTrue("缓存体积应包含新建缓存文件", storage.calculateCacheBytes() >= 2048L)
+        val removed = storage.clearAllCache()
+        assertTrue("应至少清理 1 个文件", removed >= 1)
+        assertTrue("缓存文件应已删除", !f.exists())
+    }
 }

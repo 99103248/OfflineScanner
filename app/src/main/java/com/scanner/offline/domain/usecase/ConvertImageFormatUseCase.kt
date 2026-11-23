@@ -15,14 +15,15 @@ class ConvertImageFormatUseCase @Inject constructor(
     suspend operator fun invoke(
         sourcePath: String,
         format: ExportFormat,
-        baseName: String = "converted"
+        baseName: String = "converted",
+        quality: Int = 92
     ): ExportResult = withContext(Dispatchers.IO) {
         val sink = storage.createExportSink(
             name = baseName,
             extension = format.extension,
             mimeType = format.mimeType
         )
-        sink.openOutputStream().use { os -> exporter.convertImage(sourcePath, format, os) }
+        sink.openOutputStream().use { os -> exporter.convertImage(sourcePath, format, os, quality.coerceIn(40, 100)) }
         ExportResult(
             displayName = sink.displayName,
             humanLocation = sink.humanLocation,

@@ -5,12 +5,20 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.AutoFixHigh
 import androidx.compose.material.icons.outlined.Check
+import androidx.compose.material.icons.outlined.CropFree
+import androidx.compose.material.icons.outlined.Rotate90DegreesCcw
+import androidx.compose.material.icons.outlined.Rotate90DegreesCw
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -20,6 +28,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -38,6 +47,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.input.pointer.pointerInput
@@ -114,13 +124,40 @@ fun CropScreen(
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Text(s.message, color = Color.White, style = MaterialTheme.typography.bodyMedium)
                     }
-                is CropViewModel.CropState.Ready -> CropEditor(
-                    bitmap = s.bitmap,
-                    corners = s.corners,
-                    onCornerMoved = viewModel::updateCorner,
-                    onEdgeMoved = viewModel::moveEdge,
-                    onTranslate = viewModel::translateCorners
-                )
+                is CropViewModel.CropState.Ready -> Column(modifier = Modifier.fillMaxSize()) {
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        CropEditor(
+                            bitmap = s.bitmap,
+                            corners = s.corners,
+                            onCornerMoved = viewModel::updateCorner,
+                            onEdgeMoved = viewModel::moveEdge,
+                            onTranslate = viewModel::translateCorners
+                        )
+                    }
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .background(Color.Black.copy(alpha = 0.85f))
+                            .padding(horizontal = 8.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceEvenly,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        TextButton(onClick = viewModel::autoDetect) {
+                            Icon(Icons.Outlined.AutoFixHigh, null, tint = Color.White)
+                            Text(" 自动识别", color = Color.White)
+                        }
+                        TextButton(onClick = viewModel::resetToFull) {
+                            Icon(Icons.Outlined.CropFree, null, tint = Color.White)
+                            Text(" 铺满", color = Color.White)
+                        }
+                        IconButton(onClick = { viewModel.rotate90(clockwise = false) }) {
+                            Icon(Icons.Outlined.Rotate90DegreesCcw, contentDescription = "逆时针旋转90°", tint = Color.White)
+                        }
+                        IconButton(onClick = { viewModel.rotate90(clockwise = true) }) {
+                            Icon(Icons.Outlined.Rotate90DegreesCw, contentDescription = "顺时针旋转90°", tint = Color.White)
+                        }
+                    }
+                }
             }
         }
     }
@@ -251,8 +288,70 @@ private fun CropEditor(
                 activeCorner = activeCornerIndex,
                 activeEdge = activeEdgeIndex
             )
+            if (activeCornerIndex in corners.indices && imageBitmap != null) {
+                drawCornerMagnifier(
+                    image = imageBitmap,
+                    sourceWidth = bitmap.width,
+                    sourceHeight = bitmap.height,
+                    corner = corners[activeCornerIndex],
+                    loupeRadius = with(density) { 54.dp.toPx() },
+                    margin = with(density) { 16.dp.toPx() }
+                )
+            }
         }
     }
+}
+
+/**
+ * 拖动角点时在顶部对侧绘制 2.5 倍圆形放大镜与十字准星，避免手指遮挡文档边角。
+ */
+private fun DrawScope.drawCornerMagnifier(
+    image: ImageBitmap,
+    sourceWidth: Int,
+    sourceHeight: Int,
+    corner: PointF,
+    loupeRadius: Float,
+    margin: Float
+) {
+    if (sourceWidth <= 0 || sourceHeight <= 0) return
+    val placeRight = corner.x < 0.5f
+    val cx = if (placeRight) size.width - margin - loupeRadius else margin + loupeRadius
+    val cy = margin + loupeRadius
+    val center = Offset(cx, cy)
+
+    val clipCircle = Path().apply {
+        addOval(
+            androidx.compose.ui.geometry.Rect(
+                left = cx - loupeRadius,
+                top = cy - loupeRadius,
+                right = cx + loupeRadius,
+                bottom = cy + loupeRadius
+            )
+        )
+    }
+    val zoom = 2.5f
+    val srcX = corner.x * sourceWidth
+    val srcY = corner.y * sourceHeight
+
+    clipPath(clipCircle) {
+        drawRect(
+            color = Color.Black,
+            topLeft = Offset(cx - loupeRadius, cy - loupeRadius),
+            size = androidx.compose.ui.geometry.Size(loupeRadius * 2f, loupeRadius * 2f)
+        )
+        translate(left = cx - srcX * zoom, top = cy - srcY * zoom) {
+            scale(scaleX = zoom, scaleY = zoom, pivot = Offset.Zero) {
+                drawImage(image)
+            }
+        }
+        // 十字准星
+        val crossColor = Color(0xFF64B5F6)
+        drawLine(crossColor, Offset(cx - 18f, cy), Offset(cx + 18f, cy), strokeWidth = 2.5f)
+        drawLine(crossColor, Offset(cx, cy - 18f), Offset(cx, cy + 18f), strokeWidth = 2.5f)
+        drawCircle(Color.White, radius = 3f, center = center)
+    }
+    drawCircle(Color.White, radius = loupeRadius, center = center, style = Stroke(width = 4f))
+    drawCircle(Color(0xFF2D6CDF), radius = loupeRadius - 2f, center = center, style = Stroke(width = 2f))
 }
 
 private fun DrawScope.drawScaledImage(

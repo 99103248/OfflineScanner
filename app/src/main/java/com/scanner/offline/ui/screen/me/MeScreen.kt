@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Backup
+import androidx.compose.material.icons.outlined.CleaningServices
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.FolderSpecial
 import androidx.compose.material.icons.outlined.Info
@@ -185,6 +186,25 @@ fun MeScreen(
                     )
                 }
             }
+
+            HorizontalDivider()
+
+            // ───── 存储与缓存 ─────
+            ListItem(
+                headlineContent = { Text("本地存储空间") },
+                supportingContent = {
+                    Text("已保存文档：${state.documentsSizeText} · 临时缓存：${state.cacheSizeText}")
+                },
+                leadingContent = { Icon(Icons.Outlined.CleaningServices, null) },
+                trailingContent = {
+                    OutlinedButton(
+                        onClick = viewModel::clearCache,
+                        enabled = !state.busy
+                    ) {
+                        Text("清理缓存")
+                    }
+                }
+            )
 
             HorizontalDivider()
 
